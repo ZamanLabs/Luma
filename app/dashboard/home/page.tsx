@@ -195,7 +195,7 @@ export default function HomePage() {
   )
 
   return (
-    <div style={{ padding: '40px 18px 24px', maxWidth: 540, margin: '0 auto', fontFamily: sans }}>
+    <div className="luma-home" style={{ padding: '40px 18px 24px', maxWidth: 540, margin: '0 auto', fontFamily: sans }}>
 
       <div ref={greetingRef} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 30, opacity: 0 }}>
         <div>
@@ -217,10 +217,10 @@ export default function HomePage() {
         }}>{(userName || 'W').charAt(0).toUpperCase()}</div>
       </div>
 
-      <div ref={sectionsRef} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 13 }}>
+      <div ref={sectionsRef} className="luma-bento" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 13 }}>
 
-        {/* Nutrition — hero ring (full width) */}
-        <div className="home-section luma-card" style={{ ...tileStyle(theme, nutColor), gridColumn: 'span 2', opacity: 0, display: 'flex', alignItems: 'center', gap: 20, ...dim('nutrition') }}
+        {/* Nutrition — hero ring */}
+        <div className="home-section luma-card b-span2" style={{ ...tileStyle(theme, nutColor), opacity: 0, display: 'flex', alignItems: 'center', gap: 20, ...dim('nutrition') }}
           onClick={() => router.push('/dashboard/nutrition')} {...hover('nutrition')}>
           <Ring size={118} stroke={11} pct={calPct} color={nutColor} track={theme.c2}>
             <span style={{ fontFamily: serif, fontSize: 30, color: theme.txt, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{dispCals.toLocaleString()}</span>
@@ -278,7 +278,7 @@ export default function HomePage() {
         </div>
 
         {/* Movement — wide tile with week bars */}
-        <div className="home-section luma-card" style={{ ...tileStyle(theme, theme.accent), gridColumn: 'span 2', opacity: 0, ...dim('exercise') }}
+        <div className="home-section luma-card b-wide" style={{ ...tileStyle(theme, theme.accent), opacity: 0, ...dim('exercise') }}
           onClick={() => router.push('/dashboard/exercise')} {...hover('exercise')}>
           <TileHead icon="move" name="Movement" accent={theme.accent} />
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 22, marginBottom: week.some(d => d.value > 0) ? 18 : 0 }}>

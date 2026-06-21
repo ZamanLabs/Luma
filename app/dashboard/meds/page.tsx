@@ -151,7 +151,7 @@ export default function MedsPage() {
   if (loading) return <Loader t={theme} />
 
   return (
-    <div style={s.page}>
+    <div className="luma-page" style={s.page}>
 
       <div ref={headerRef} style={{ opacity: 0 }}>
         <PageHeader t={theme} eyebrow="Medications" title={isToday ? 'Today' : fmtDate(viewDate)}

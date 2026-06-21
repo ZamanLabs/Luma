@@ -18,7 +18,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div style={s.page}>
+    <div className="luma-page" style={s.page}>
       <PageHeader t={theme} eyebrow="Preferences" title="Settings" />
 
       {/* Theme picker */}

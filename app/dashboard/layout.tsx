@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation'
 import type { CSSProperties } from 'react'
 import { useTheme } from '../ThemeContext'
-import { FONT_IMPORT, GLOBAL_CSS, Icon, sans } from './ui'
+import { FONT_IMPORT, GLOBAL_CSS, Icon, serif, sans } from './ui'
 
 const tabs = [
   { id: 'home',      icon: 'home',      label: 'Home',     path: '/dashboard/home'      },
@@ -60,11 +60,54 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         }}
       />
 
-      <main style={{ position: 'relative', zIndex: 1, paddingBottom: 96 }}>
+      {/* Desktop: left sidebar */}
+      <nav className="luma-side-nav" style={{
+        position: 'fixed', top: 0, left: 0, bottom: 0, width: 244, zIndex: 10,
+        flexDirection: 'column', padding: '32px 16px',
+        background: `color-mix(in srgb, ${theme.bg} 78%, transparent)`,
+        borderRight: `1px solid ${theme.border}`,
+        backdropFilter: 'blur(18px) saturate(1.2)',
+        WebkitBackdropFilter: 'blur(18px) saturate(1.2)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 12px', marginBottom: 34 }}>
+          <span style={{
+            width: 34, height: 34, borderRadius: 11, flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontFamily: serif, fontSize: 20, color: theme.accent,
+            background: `linear-gradient(150deg, color-mix(in srgb, ${theme.accent} 26%, ${theme.c1}), ${theme.c1})`,
+            border: `1px solid color-mix(in srgb, ${theme.accent} 30%, ${theme.border})`,
+          }}>L</span>
+          <span style={{ fontFamily: serif, fontSize: 26, color: theme.txt, letterSpacing: '-0.01em' }}>Luma</span>
+        </div>
+        {tabs.map(tab => {
+          const active = pathname.startsWith(tab.path)
+          return (
+            <button
+              key={tab.id}
+              className="luma-side-tab"
+              onClick={() => router.push(tab.path)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 13, width: '100%',
+                border: 'none', cursor: 'pointer', textAlign: 'left',
+                padding: '11px 14px', marginBottom: 3, borderRadius: 12,
+                fontFamily: sans, fontSize: 14, fontWeight: active ? 600 : 400,
+                color: active ? theme.accent : theme.muted,
+                background: active ? `color-mix(in srgb, ${theme.accent} 14%, transparent)` : 'transparent',
+              }}
+            >
+              <Icon name={tab.icon} size={20} stroke={active ? 1.9 : 1.6} />
+              {tab.label}
+            </button>
+          )
+        })}
+      </nav>
+
+      <main className="luma-main" style={{ position: 'relative', zIndex: 1, paddingBottom: 96 }}>
         {children}
       </main>
 
-      <nav style={{
+      {/* Mobile: bottom nav */}
+      <nav className="luma-bottom-nav" style={{
         position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 10,
         background: `color-mix(in srgb, ${theme.bg} 82%, transparent)`,
         borderTop: `1px solid ${theme.border}`,

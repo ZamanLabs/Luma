@@ -83,6 +83,23 @@ export const GLOBAL_CSS = `
 @media (prefers-reduced-motion: reduce) {
   .luma-ambient { animation: none !important; }
 }
+
+.luma-side-nav { display: none; }
+.b-span2 { grid-column: span 2; }
+.b-wide { grid-column: span 2; }
+
+.luma-side-tab { transition: background .2s ease, color .2s ease; }
+.luma-side-tab:hover { background: var(--c2); color: var(--txt); }
+
+@media (min-width: 920px) {
+  .luma-bottom-nav { display: none !important; }
+  .luma-side-nav { display: flex !important; }
+  .luma-main { padding-left: 244px !important; padding-bottom: 24px !important; }
+  .luma-home { max-width: 1060px !important; }
+  .luma-page { max-width: 660px !important; }
+  .luma-bento { grid-template-columns: repeat(4, 1fr) !important; gap: 16px !important; }
+  .b-wide { grid-column: span 4 !important; }
+}
 `
 
 /* ----------------------------------------------------------------------------

@@ -86,7 +86,7 @@ export default function JournalPage() {
   const s = styles(theme)
 
   return (
-    <div style={s.page}>
+    <div className="luma-page" style={s.page}>
 
       <div ref={headerRef} style={{ opacity: 0 }}>
         <PageHeader t={theme} eyebrow="Private · Just for you" title="Journal" />
