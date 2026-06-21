@@ -5,7 +5,7 @@ import { useEffect, useCallback, useState, useRef } from 'react'
 import { useTheme } from '../../ThemeContext'
 import { useRouter } from 'next/navigation'
 import { animate, stagger } from 'animejs'
-import { Icon, Ring, WeekChart, tileStyle, lastNDays, serif, sans } from '../ui'
+import { Icon, Ring, WeekChart, tileStyle, lastNDays, useProfileMenu, serif, sans } from '../ui'
 import { cacheGet, cacheSet } from '../cache'
 
 type Pill = { id: string; name: string; scheduled_time: string }
@@ -39,6 +39,7 @@ export default function HomePage() {
   const supabase = createClient()
   const { theme } = useTheme()
   const router = useRouter()
+  const openMenu = useProfileMenu()
 
   const [loading, setLoading] = useState(true)
   const [calGoal, setCalGoal] = useState(2000)
@@ -238,14 +239,14 @@ export default function HomePage() {
             <span style={{ color: calLeft < 0 || moneyLeft < 0 ? theme.red : theme.muted }}>{insight}</span>
           </div>
         </div>
-        <div style={{
-          width: 52, height: 52, borderRadius: '50%', flexShrink: 0, marginLeft: 14,
+        <button className="luma-btn" onClick={openMenu} aria-label="Profile and settings" style={{
+          width: 52, height: 52, borderRadius: '50%', flexShrink: 0, marginLeft: 14, cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontFamily: serif, fontSize: 23, color: theme.accent,
           background: `linear-gradient(150deg, color-mix(in srgb, ${theme.accent} 28%, ${theme.c1}), ${theme.c1})`,
           border: `1px solid color-mix(in srgb, ${theme.accent} 34%, ${theme.border})`,
           boxShadow: `0 10px 26px -12px ${theme.accent}`,
-        }}>{(userName || 'W').charAt(0).toUpperCase()}</div>
+        }}>{(userName || 'W').charAt(0).toUpperCase()}</button>
       </div>
 
       <div ref={sectionsRef} className="luma-bento" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 13 }}>

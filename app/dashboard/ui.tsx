@@ -1,8 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import type { Theme } from '../theme'
+
+/* Lets any page (e.g. the home avatar) open the profile menu owned by the layout. */
+export const ProfileMenuContext = createContext<() => void>(() => {})
+export const useProfileMenu = () => useContext(ProfileMenuContext)
 
 /* ----------------------------------------------------------------------------
    Typography
