@@ -1,0 +1,122 @@
+export type Theme = {
+  name: string
+  bg: string
+  c1: string
+  c2: string
+  c3: string
+  border: string
+  txt: string
+  muted: string
+  sub: string
+  accent: string
+  accent2: string
+  green: string
+  red: string
+  blue: string
+  purple: string
+}
+
+export const themes: Record<string, Theme> = {
+  midnight: {
+    name: 'Midnight',
+    bg:      '#0f0e0c',
+    c1:      '#1d1812',
+    c2:      '#262018',
+    c3:      '#302a1e',
+    border:  '#2c2418',
+    txt:     '#f0e6d6',
+    muted:   '#7a6d5e',
+    sub:     '#4a3f33',
+    accent:  '#e8a53a',
+    accent2: '#c4852a',
+    green:   '#72b07c',
+    red:     '#c95f52',
+    blue:    '#5a8fc9',
+    purple:  '#9b7fc9',
+  },
+  nord: {
+    name: 'Nord',
+    bg:      '#1a1f2e',
+    c1:      '#222839',
+    c2:      '#2a3044',
+    c3:      '#323a50',
+    border:  '#2e3650',
+    txt:     '#d8dee9',
+    muted:   '#6b7a99',
+    sub:     '#4a5470',
+    accent:  '#88c0d0',
+    accent2: '#5e9eb0',
+    green:   '#a3be8c',
+    red:     '#bf616a',
+    blue:    '#81a1c1',
+    purple:  '#b48ead',
+  },
+  sage: {
+    name: 'Sage',
+    bg:      '#0d1210',
+    c1:      '#141c18',
+    c2:      '#1a2420',
+    c3:      '#202e28',
+    border:  '#1e2e28',
+    txt:     '#d4e8d8',
+    muted:   '#5a7a62',
+    sub:     '#3a5240',
+    accent:  '#7ab885',
+    accent2: '#5a9868',
+    green:   '#a8d5a2',
+    red:     '#c97a6a',
+    blue:    '#6a9ab0',
+    purple:  '#9a8ac0',
+  },
+  crimson: {
+    name: 'Crimson',
+    bg:      '#120c0c',
+    c1:      '#1e1010',
+    c2:      '#261414',
+    c3:      '#301a1a',
+    border:  '#2e1818',
+    txt:     '#f0dede',
+    muted:   '#8a5e5e',
+    sub:     '#5a3838',
+    accent:  '#e85a5a',
+    accent2: '#c43a3a',
+    green:   '#7ab07a',
+    red:     '#e85a5a',
+    blue:    '#5a8fc9',
+    purple:  '#c97ab0',
+  },
+  paper: {
+    name: 'Paper',
+    bg:      '#f5f0e8',
+    c1:      '#ede8de',
+    c2:      '#e4ddd0',
+    c3:      '#d8d0c0',
+    border:  '#d0c8b8',
+    txt:     '#2a2218',
+    muted:   '#7a6d5e',
+    sub:     '#a09080',
+    accent:  '#c4852a',
+    accent2: '#a06820',
+    green:   '#4a8a54',
+    red:     '#a84030',
+    blue:    '#3a6a9a',
+    purple:  '#6a4a9a',
+  },
+  snow: {
+    name: 'Snow',
+    bg:      '#f8f9fc',
+    c1:      '#ffffff',
+    c2:      '#f0f2f8',
+    c3:      '#e4e8f0',
+    border:  '#dde2ee',
+    txt:     '#1a1e2e',
+    muted:   '#6b7a99',
+    sub:     '#9aa0b8',
+    accent:  '#4a6cf0',
+    accent2: '#3a5cd0',
+    green:   '#2a9a5a',
+    red:     '#d04040',
+    blue:    '#4a6cf0',
+    purple:  '#7a4acf',
+  },
+}
