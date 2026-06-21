@@ -4,8 +4,12 @@ import { createClient } from '@/utils/supabase/client'
 import { useEffect, useCallback, useState, useRef } from 'react'
 import { useTheme } from '../../ThemeContext'
 import { animate, stagger } from 'animejs'
+import { styles, PageHeader, CardLabel, Loader, EmptyState, WeekChart, lastNDays, Icon, serif, sans } from '../ui'
+import { cacheGet, cacheSet } from '../cache'
 
 type ExerciseLog = { id: string; type: string; duration_minutes: number; notes: string; date: string; time: string }
+type Day = { date: string; value: number }
+type Cache = { acts: ExerciseLog[]; week: Day[] }
 
 const EX_TYPES = ['🚶 Walk', '🏃 Jog', '🏋️ Gym', '🚴 Cycling', '🧘 Yoga', '🏊 Swim', '⚽ Sport', 'Other']
 const todayStr = () => new Date().toISOString().slice(0, 10)
@@ -26,6 +30,7 @@ export default function ExercisePage() {
   const [showHistory, setShowHistory] = useState(false)
   const [dispMins, setDispMins] = useState(0)
   const [dispActs, setDispActs] = useState(0)
+  const [week, setWeek] = useState<Day[]>([])
 
   const headerRef = useRef<HTMLDivElement>(null)
   const statsRef = useRef<HTMLDivElement>(null)
@@ -62,13 +67,36 @@ export default function ExercisePage() {
   }, [])
 
   const loadData = useCallback(async (date: string, uid: string) => {
-    setLoading(true)
-    setDispMins(0); setDispActs(0)
-    const { data } = await supabase.from('exercise_logs').select('*').eq('user_id', uid).eq('date', date).order('created_at', { ascending: true })
-    const items = data || []
-    setActs(items)
+    const key = `exercise:${uid}:${date}`
+    const cached = cacheGet<Cache>(key)
+    if (cached) {
+      setActs(cached.acts); setWeek(cached.week); setLoading(false)
+      runAnimations(cached.acts)
+    } else {
+      setLoading(true)
+      setDispMins(0); setDispActs(0)
+    }
+
+    const days = lastNDays(7, date)
+    const [logsRes, weekRes] = await Promise.all([
+      supabase.from('exercise_logs').select('*').eq('user_id', uid).eq('date', date).order('created_at', { ascending: true }),
+      supabase.from('exercise_logs').select('duration_minutes, date').eq('user_id', uid).gte('date', days[0]).lte('date', days[6]),
+    ])
+    const items = logsRes.data || []
+    const byDate: Record<string, number> = {}
+    weekRes.data?.forEach((r: { duration_minutes: number; date: string }) => { byDate[r.date] = (byDate[r.date] || 0) + r.duration_minutes })
+    const weekData: Day[] = days.map(d => ({ date: d, value: byDate[d] || 0 }))
+
+    cacheSet<Cache>(key, { acts: items, week: weekData })
+    setActs(items); setWeek(weekData)
+    const changed = !cached || items.length !== cached.acts.length || items.some((a, i) => a.id !== cached.acts[i]?.id)
     setLoading(false)
-    runAnimations(items)
+    if (changed) {
+      runAnimations(items)
+    } else {
+      setDispMins(items.reduce((s, a) => s + a.duration_minutes, 0))
+      setDispActs(items.length)
+    }
   }, [supabase, runAnimations])
 
   useEffect(() => {
@@ -87,17 +115,32 @@ export default function ExercisePage() {
     const entry = { user_id: userId, type, duration_minutes: parseInt(duration), notes: notes.trim(), date: viewDate, time: timeNow(), updated_at: now, created_at: now }
     const { data } = await supabase.from('exercise_logs').insert(entry).select().single()
     if (data) {
-      setActs(prev => [...prev, data])
+      const next = [...acts, data]
+      setActs(next)
       setDispMins(prev => prev + data.duration_minutes)
       setDispActs(prev => prev + 1)
+      adjustWeek(data.date, data.duration_minutes, next)
     }
     setDuration(''); setNotes('')
   }
 
   const deleteActivity = async (id: string) => {
     if (viewDate !== todayStr()) return
+    const removed = acts.find(a => a.id === id)
     await supabase.from('exercise_logs').delete().eq('id', id)
-    setActs(prev => prev.filter(a => a.id !== id))
+    const next = acts.filter(a => a.id !== id)
+    setActs(next)
+    if (removed) {
+      setDispMins(prev => prev - removed.duration_minutes)
+      setDispActs(prev => prev - 1)
+      adjustWeek(removed.date, -removed.duration_minutes, next)
+    }
+  }
+
+  const adjustWeek = (date: string, delta: number, items: ExerciseLog[]) => {
+    const next = week.map(d => d.date === date ? { ...d, value: Math.max(0, d.value + delta) } : d)
+    setWeek(next)
+    if (userId) cacheSet<Cache>(`exercise:${userId}:${viewDate}`, { acts: items, week: next })
   }
 
   const prevDate = () => { const d = new Date(viewDate + 'T12:00'); d.setDate(d.getDate() - 1); setViewDate(d.toISOString().slice(0, 10)) }
@@ -106,30 +149,30 @@ export default function ExercisePage() {
   const isToday = viewDate === todayStr()
   const totalMins = acts.reduce((s, a) => s + a.duration_minutes, 0)
 
-  const inp = { background: theme.c2, border: `1px solid ${theme.border}`, borderRadius: 10, padding: '10px 12px', color: theme.txt, fontSize: 14, outline: 'none' } as const
-  const card = { background: theme.c1, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 18, marginBottom: 14 } as const
+  const s = styles(theme)
+  const inp = s.input
 
-  if (loading) return <div style={{ padding: 24, color: theme.muted }}>Loading...</div>
+  if (loading) return <Loader t={theme} />
 
   return (
-    <div style={{ padding: '20px 16px', maxWidth: 480, margin: '0 auto' }}>
+    <div style={s.page}>
 
-      <div ref={headerRef} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, opacity: 0 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: theme.accent, marginBottom: 2 }}>Movement</h1>
-          <p style={{ fontSize: 12, color: theme.sub }}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
-        </div>
-        <button onClick={() => { setShowHistory(!showHistory); if (showHistory) setViewDate(todayStr()) }}
-          style={{ background: showHistory ? theme.accent + '22' : 'transparent', border: `1px solid ${showHistory ? theme.accent : theme.border}`, borderRadius: 9, padding: '6px 12px', fontSize: 12, color: showHistory ? theme.accent : theme.muted, cursor: 'pointer' }}>
-          {showHistory ? 'Back to Today' : '📅 History'}
-        </button>
+      <div ref={headerRef} style={{ opacity: 0 }}>
+        <PageHeader t={theme} eyebrow="Movement" title={isToday ? 'Today' : fmtDate(viewDate)}
+          right={
+            <button className="luma-ghost" onClick={() => { setShowHistory(!showHistory); if (showHistory) setViewDate(todayStr()) }}
+              style={{ ...s.ghostBtn, ...(showHistory ? { borderColor: theme.accent, color: theme.accent } : {}) }}>
+              <Icon name={showHistory ? 'arrowRight' : 'calendar'} size={14} />
+              {showHistory ? 'Today' : 'History'}
+            </button>
+          } />
       </div>
 
       {showHistory && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-          <button onClick={prevDate} style={{ background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: 9, padding: '7px 14px', fontSize: 13, color: theme.muted, cursor: 'pointer' }}>←</button>
-          <div style={{ flex: 1, textAlign: 'center', fontSize: 13, color: theme.txt, fontWeight: 500 }}>{isToday ? 'Today' : fmtDate(viewDate)}</div>
-          <button onClick={nextDate} disabled={isToday} style={{ background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: 9, padding: '7px 14px', fontSize: 13, color: isToday ? theme.border : theme.muted, cursor: isToday ? 'default' : 'pointer' }}>→</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <button className="luma-icon-btn" onClick={prevDate} style={s.iconBtn}><Icon name="chevronLeft" size={16} /></button>
+          <div style={{ flex: 1, textAlign: 'center', fontSize: 13, color: theme.txt, fontWeight: 500, fontFamily: sans }}>{isToday ? 'Today' : fmtDate(viewDate)}</div>
+          <button className="luma-icon-btn" onClick={nextDate} disabled={isToday} style={{ ...s.iconBtn, opacity: isToday ? 0.35 : 1, cursor: isToday ? 'default' : 'pointer' }}><Icon name="chevronRight" size={16} /></button>
         </div>
       )}
 
@@ -138,49 +181,57 @@ export default function ExercisePage() {
           { val: dispActs, label: 'Activities', color: theme.blue },
           { val: dispMins, label: 'Minutes', color: theme.green },
           { val: (totalMins / 60).toFixed(1), label: 'Hours', color: theme.accent },
-        ].map(s => (
-          <div key={s.label} className="stat-box" style={{ flex: 1, background: theme.c1, border: `1px solid ${theme.border}`, borderRadius: 14, padding: '12px 10px', textAlign: 'center', opacity: 0 }}>
-            <div style={{ fontSize: 26, fontWeight: 700, color: s.color, lineHeight: 1 }}>{s.val}</div>
-            <div style={{ fontSize: 10, color: theme.sub, marginTop: 4, textTransform: 'uppercase', letterSpacing: '.5px' }}>{s.label}</div>
+        ].map(st => (
+          <div key={st.label} className="stat-box luma-card" style={{ flex: 1, background: `linear-gradient(170deg, ${theme.c1}, ${theme.bg})`, border: `1px solid ${theme.border}`, borderRadius: 18, padding: '16px 10px', textAlign: 'center', opacity: 0, boxShadow: `0 18px 40px -28px rgba(0,0,0,0.7)` }}>
+            <div style={{ fontSize: 34, color: st.color, lineHeight: 1, fontFamily: serif, fontVariantNumeric: 'tabular-nums' }}>{st.val}</div>
+            <div style={{ ...s.label, fontSize: 9.5, marginTop: 7 }}>{st.label}</div>
           </div>
         ))}
       </div>
 
+      {week.length > 0 && (
+        <div className="luma-card" style={s.card}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 18 }}>
+            <CardLabel t={theme} style={{ marginBottom: 0 }}>This Week</CardLabel>
+            <span style={{ fontSize: 11.5, color: theme.muted, fontFamily: sans }}>
+              total <strong style={{ color: theme.txt, fontFamily: serif, fontSize: 15 }}>{week.reduce((a, d) => a + d.value, 0)}</strong> min
+            </span>
+          </div>
+          <WeekChart t={theme} color={theme.green} data={week.map(d => d.date === viewDate ? { ...d, value: totalMins } : d)} fmt={v => Math.round(v) + 'm'} />
+        </div>
+      )}
+
       {isToday && (
-        <div ref={formRef} style={{ ...card, opacity: 0 }}>
-          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.8px', color: theme.sub, marginBottom: 10 }}>Log Activity</div>
+        <div ref={formRef} className="luma-card" style={{ ...s.card, opacity: 0 }}>
+          <CardLabel t={theme}>Log Activity</CardLabel>
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-            <select value={type} onChange={e => setType(e.target.value)} style={{ ...inp, flex: 1, cursor: 'pointer' }}>
+            <select className="luma-input" value={type} onChange={e => setType(e.target.value)} style={{ ...inp, flex: 1, cursor: 'pointer' }}>
               {EX_TYPES.map(t => <option key={t}>{t}</option>)}
             </select>
-            <input value={duration} onChange={e => setDuration(e.target.value)} type="number" placeholder="mins" style={{ ...inp, width: 80 }} />
+            <input className="luma-input" value={duration} onChange={e => setDuration(e.target.value)} type="number" placeholder="mins" style={{ ...inp, width: 84 }} />
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes (optional)" onKeyDown={e => e.key === 'Enter' && addActivity()} style={{ ...inp, flex: 1 }} />
-            <button onClick={addActivity} style={{ background: theme.accent, border: 'none', borderRadius: 10, padding: '10px 20px', fontSize: 14, fontWeight: 700, cursor: 'pointer', color: theme.bg }}>Log</button>
+            <input className="luma-input" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes (optional)" onKeyDown={e => e.key === 'Enter' && addActivity()} style={{ ...inp, flex: 1 }} />
+            <button className="luma-btn" onClick={addActivity} style={{ ...s.primaryBtn, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="plus" size={16} stroke={2} />Log</button>
           </div>
         </div>
       )}
 
       {acts.length > 0 ? (
-        <div ref={listRef} style={card}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: theme.txt, marginBottom: 14 }}>{isToday ? "Today's Activities" : fmtDate(viewDate)}</div>
+        <div ref={listRef} className="luma-card" style={s.card}>
+          <CardLabel t={theme}>{isToday ? "Today's Activities" : fmtDate(viewDate)}</CardLabel>
           {acts.map((a, i) => (
-            <div key={a.id} className="act-item" style={{ display: 'flex', alignItems: 'center', padding: '9px 0', borderBottom: i < acts.length - 1 ? `1px solid ${theme.border}` : 'none', gap: 8, opacity: 0 }}>
-              <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 7, fontWeight: 500, background: theme.blue + '22', color: theme.blue, flexShrink: 0 }}>{a.type}</span>
-              <div style={{ flex: 1, fontSize: 13, color: theme.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.notes}</div>
-              <div style={{ fontSize: 13, color: theme.muted, flexShrink: 0 }}>{a.duration_minutes} min</div>
-              <div style={{ fontSize: 11, color: theme.sub, flexShrink: 0 }}>{a.time}</div>
-              {isToday && <button onClick={() => deleteActivity(a.id)} style={{ background: 'transparent', border: `1px solid ${theme.border}`, color: theme.sub, borderRadius: 7, padding: '3px 8px', fontSize: 11, cursor: 'pointer' }}>✕</button>}
+            <div key={a.id} className="act-item luma-row" style={{ display: 'flex', alignItems: 'center', padding: '11px 0', borderBottom: i < acts.length - 1 ? `1px solid ${theme.border}` : 'none', gap: 9, opacity: 0 }}>
+              <span style={s.chip(theme.blue)}>{a.type}</span>
+              <div style={{ flex: 1, fontSize: 13, color: theme.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: sans }}>{a.notes}</div>
+              <div style={{ fontFamily: serif, fontSize: 17, color: theme.muted, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{a.duration_minutes}<span style={{ fontFamily: sans, fontSize: 11, marginLeft: 2 }}>m</span></div>
+              <div style={{ fontSize: 11, color: theme.sub, flexShrink: 0, fontFamily: sans, width: 38 }}>{a.time}</div>
+              {isToday && <button className="luma-del luma-icon-btn" onClick={() => deleteActivity(a.id)} style={{ ...s.iconBtn, width: 24, height: 24 }}><Icon name="x" size={13} /></button>}
             </div>
           ))}
         </div>
       ) : (
-        <div style={{ textAlign: 'center', padding: '36px 0', color: theme.sub }}>
-          <div style={{ fontSize: 36, marginBottom: 10 }}>🏃</div>
-          <div style={{ fontSize: 13 }}>{isToday ? 'No activities logged today.' : 'No activities on this day.'}</div>
-          {isToday && <div style={{ fontSize: 12, marginTop: 4 }}>Every movement counts.</div>}
-        </div>
+        <EmptyState t={theme} icon="move" text={isToday ? 'No activities logged today.' : 'No activities on this day.'} hint={isToday ? 'Every movement counts.' : undefined} />
       )}
     </div>
   )

@@ -4,6 +4,8 @@ import { createClient } from '@/utils/supabase/client'
 import { useEffect, useCallback, useState, useRef } from 'react'
 import { useTheme } from '../../ThemeContext'
 import { animate } from 'animejs'
+import { styles, PageHeader, Icon, serif, sans } from '../ui'
+import { cacheGet, cacheSet } from '../cache'
 
 const todayStr = () => new Date().toISOString().slice(0, 10)
 const fmtDate = (d: string) =>
@@ -34,11 +36,19 @@ export default function JournalPage() {
   }, [])
 
   const loadEntry = useCallback(async (d: string, uid: string) => {
-    setLoading(true)
+    const key = `journal:${uid}:${d}`
+    const cached = cacheGet<string>(key)
+    if (cached !== undefined) {
+      setContent(cached); setLoading(false); runAnimations()
+    } else {
+      setLoading(true)
+    }
     const { data } = await supabase.from('journal_entries').select('content').eq('user_id', uid).eq('date', d).single()
-    setContent(data?.content || '')
+    const text = data?.content || ''
+    cacheSet<string>(key, text)
+    setContent(text)
     setLoading(false)
-    runAnimations()
+    if (cached === undefined) runAnimations()
   }, [supabase, runAnimations])
 
   useEffect(() => {
@@ -63,6 +73,7 @@ export default function JournalPage() {
   const handleChange = (text: string) => {
     setContent(text)
     setSaved(false)
+    if (userId) cacheSet<string>(`journal:${userId}:${date}`, text)
     if (debounceRef.current) clearTimeout(debounceRef.current)
     if (userId) debounceRef.current = setTimeout(() => saveEntry(text, date, userId), 1500)
   }
@@ -72,43 +83,44 @@ export default function JournalPage() {
 
   const isToday = date === todayStr()
 
+  const s = styles(theme)
+
   return (
-    <div style={{ padding: '20px 16px', maxWidth: 480, margin: '0 auto' }}>
+    <div style={s.page}>
 
-      <div ref={headerRef} style={{ marginBottom: 20, opacity: 0 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: theme.accent, marginBottom: 2 }}>Journal</h1>
-        <p style={{ fontSize: 12, color: theme.sub }}>Private. Just for you.</p>
+      <div ref={headerRef} style={{ opacity: 0 }}>
+        <PageHeader t={theme} eyebrow="Private · Just for you" title="Journal" />
       </div>
 
-      <div ref={navRef} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, opacity: 0 }}>
-        <button onClick={prevDate} style={{ background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: 9, padding: '7px 14px', fontSize: 13, color: theme.muted, cursor: 'pointer' }}>←</button>
-        <div style={{ flex: 1, textAlign: 'center', fontSize: 13, color: theme.txt }}>{isToday ? 'Today — ' : ''}{fmtDate(date)}</div>
-        <button onClick={nextDate} disabled={isToday} style={{ background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: 9, padding: '7px 14px', fontSize: 13, color: isToday ? theme.border : theme.muted, cursor: isToday ? 'default' : 'pointer' }}>→</button>
+      <div ref={navRef} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, opacity: 0 }}>
+        <button className="luma-icon-btn" onClick={prevDate} style={s.iconBtn}><Icon name="chevronLeft" size={16} /></button>
+        <div style={{ flex: 1, textAlign: 'center', fontSize: 13, color: theme.txt, fontFamily: sans }}>{isToday ? 'Today — ' : ''}{fmtDate(date)}</div>
+        <button className="luma-icon-btn" onClick={nextDate} disabled={isToday} style={{ ...s.iconBtn, opacity: isToday ? 0.35 : 1, cursor: isToday ? 'default' : 'pointer' }}><Icon name="chevronRight" size={16} /></button>
       </div>
 
-      <div ref={cardRef} style={{ background: theme.c1, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 18, opacity: 0 }}>
+      <div ref={cardRef} className="luma-card" style={{ ...s.card, padding: 24, opacity: 0 }}>
         {loading ? (
-          <div style={{ color: theme.sub, fontSize: 13 }}>Loading...</div>
+          <div style={{ color: theme.sub, fontSize: 13, fontFamily: sans }}>Loading...</div>
         ) : (
           <>
             <textarea
               value={content}
               onChange={e => handleChange(e.target.value)}
               placeholder={`What's on your mind today?\n\nWrite freely — this is just for you.`}
-              rows={12}
-              style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', color: theme.txt, fontSize: 15, lineHeight: 1.75, fontFamily: 'Georgia, serif', fontStyle: 'italic', resize: 'none', boxSizing: 'border-box' }}
+              rows={13}
+              style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', color: theme.txt, fontSize: 18, lineHeight: 1.8, fontFamily: serif, resize: 'none', boxSizing: 'border-box' }}
             />
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, paddingTop: 10, borderTop: `1px solid ${theme.border}` }}>
-              <span style={{ fontSize: 11, color: theme.sub }}>{content.length} characters</span>
-              <span style={{ fontSize: 12, color: saved ? theme.green : saving ? theme.muted : theme.sub }}>
-                {saved ? '✓ Saved' : saving ? 'Saving...' : 'Auto-saves as you type'}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingTop: 12, borderTop: `1px solid ${theme.border}` }}>
+              <span style={{ ...s.label, color: theme.sub }}>{content.length} characters</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: saved ? theme.green : saving ? theme.muted : theme.sub, fontFamily: sans }}>
+                {saved ? <><Icon name="check" size={13} stroke={2.2} />Saved</> : saving ? 'Saving…' : 'Auto-saves as you type'}
               </span>
             </div>
           </>
         )}
       </div>
 
-      <div style={{ fontSize: 11, color: theme.sub, textAlign: 'center', marginTop: 12 }}>
+      <div style={{ ...s.label, color: theme.sub, textAlign: 'center', marginTop: 16, letterSpacing: '0.1em' }}>
         Use ← → to browse past entries
       </div>
     </div>

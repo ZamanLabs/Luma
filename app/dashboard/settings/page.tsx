@@ -4,20 +4,13 @@ import { useTheme } from '../../ThemeContext'
 import { themes } from '../../theme'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
-
-const THEME_PREVIEWS: Record<string, { bg: string; accent: string }> = {
-  midnight: { bg: '#1d1812', accent: '#e8a53a' },
-  nord:     { bg: '#222839', accent: '#88c0d0' },
-  sage:     { bg: '#141c18', accent: '#7ab885' },
-  crimson:  { bg: '#1e1010', accent: '#e85a5a' },
-  paper:    { bg: '#ede8de', accent: '#c4852a' },
-  snow:     { bg: '#ffffff', accent: '#4a6cf0' },
-}
+import { styles, PageHeader, CardLabel, Icon, serif, sans } from '../ui'
 
 export default function SettingsPage() {
   const { theme, themeName, setThemeName } = useTheme()
   const supabase = createClient()
   const router = useRouter()
+  const s = styles(theme)
 
   const signOut = async () => {
     await supabase.auth.signOut()
@@ -25,44 +18,53 @@ export default function SettingsPage() {
   }
 
   return (
-    <div style={{ padding: '20px 16px', maxWidth: 480, margin: '0 auto' }}>
-      <div style={{ marginBottom: 20 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: theme.accent, marginBottom: 2 }}>Settings</h1>
-      </div>
+    <div style={s.page}>
+      <PageHeader t={theme} eyebrow="Preferences" title="Settings" />
 
       {/* Theme picker */}
-      <div style={{ background: theme.c1, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 18, marginBottom: 14 }}>
-        <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.8px', color: theme.sub, marginBottom: 14 }}>Theme</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+      <div className="luma-card" style={s.card}>
+        <CardLabel t={theme}>Appearance</CardLabel>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 11 }}>
           {Object.entries(themes).map(([key, t]) => {
-            const preview = THEME_PREVIEWS[key]
             const active = themeName === key
             return (
-              <div key={key} onClick={() => setThemeName(key)} style={{
-                background: preview.bg,
-                border: `2px solid ${active ? preview.accent : theme.border}`,
-                borderRadius: 12, padding: '14px 16px', cursor: 'pointer',
-                transition: 'border-color .2s',
+              <div key={key} className="luma-card" onClick={() => setThemeName(key)} style={{
+                background: `linear-gradient(165deg, ${t.c1}, ${t.bg})`,
+                border: `1.5px solid ${active ? t.accent : t.border}`,
+                borderRadius: 16, padding: 15, cursor: 'pointer',
+                boxShadow: active ? `0 0 0 3px color-mix(in srgb, ${t.accent} 18%, transparent), 0 16px 34px -24px rgba(0,0,0,0.8)` : 'none',
               }}>
-                <div style={{ width: 24, height: 24, borderRadius: '50%', background: preview.accent, marginBottom: 8 }} />
-                <div style={{ fontSize: 13, fontWeight: 600, color: preview.accent }}>{t.name}</div>
-                {active && <div style={{ fontSize: 10, color: preview.accent, marginTop: 2, opacity: .7 }}>Active</div>}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 12 }}>
+                  <span style={{ width: 22, height: 22, borderRadius: '50%', background: `linear-gradient(135deg, ${t.accent}, ${t.accent2})`, flexShrink: 0, boxShadow: `0 3px 8px -2px ${t.accent}` }} />
+                  <span style={{ width: 9, height: 9, borderRadius: '50%', background: t.green }} />
+                  <span style={{ width: 9, height: 9, borderRadius: '50%', background: t.blue }} />
+                  <span style={{ width: 9, height: 9, borderRadius: '50%', background: t.purple }} />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 14, fontFamily: serif, color: t.txt }}>{t.name}</span>
+                  {active && <span style={{ color: t.accent, display: 'flex' }}><Icon name="check" size={15} stroke={2.2} /></span>}
+                </div>
               </div>
             )
           })}
         </div>
       </div>
 
-      {/* Sign out */}
-      <div style={{ background: theme.c1, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 18 }}>
-        <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.8px', color: theme.sub, marginBottom: 14 }}>Account</div>
+      {/* Account */}
+      <div className="luma-card" style={s.card}>
+        <CardLabel t={theme}>Account</CardLabel>
         <button onClick={signOut} style={{
-          width: '100%', background: 'transparent', border: `1px solid ${theme.red}`,
-          borderRadius: 10, padding: '10px 0', fontSize: 14, fontWeight: 600,
-          color: theme.red, cursor: 'pointer',
+          width: '100%', background: 'transparent', border: `1px solid color-mix(in srgb, ${theme.red} 45%, ${theme.border})`,
+          borderRadius: 12, padding: '12px 0', fontSize: 13.5, fontWeight: 600,
+          color: theme.red, cursor: 'pointer', fontFamily: sans,
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
         }}>
-          Sign Out
+          <Icon name="arrowRight" size={16} />Sign Out
         </button>
+      </div>
+
+      <div style={{ ...s.label, color: theme.sub, textAlign: 'center', marginTop: 20, letterSpacing: '0.18em' }}>
+        Luma · Personal Tracker
       </div>
     </div>
   )

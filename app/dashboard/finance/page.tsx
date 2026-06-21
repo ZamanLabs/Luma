@@ -4,8 +4,12 @@ import { createClient } from '@/utils/supabase/client'
 import { useEffect, useCallback, useState, useRef } from 'react'
 import { useTheme } from '../../ThemeContext'
 import { animate, stagger } from 'animejs'
+import { styles, PageHeader, CardLabel, Loader, EmptyState, WeekChart, Ring, lastNDays, Icon, serif, sans } from '../ui'
+import { cacheGet, cacheSet } from '../cache'
 
 type Expense = { id: string; name: string; amount: number; category: string; date: string }
+type Day = { date: string; value: number }
+type Cache = { expenses: Expense[]; budget: number; week: Day[] }
 
 const CATS = ['Necessity', 'Optional', 'Entertainment', 'Health', 'Transport', 'Other']
 const todayStr = () => new Date().toISOString().slice(0, 10)
@@ -33,6 +37,7 @@ export default function FinancePage() {
   const [viewMonth, setViewMonth] = useState(new Date().toISOString().slice(0, 7))
   const [showHistory, setShowHistory] = useState(false)
   const [dispSpent, setDispSpent] = useState(0)
+  const [week, setWeek] = useState<Day[]>([])
 
   const headerRef = useRef<HTMLDivElement>(null)
   const summaryRef = useRef<HTMLDivElement>(null)
@@ -73,18 +78,39 @@ export default function FinancePage() {
   }, [])
 
   const loadData = useCallback(async (m: string, uid: string) => {
-    setLoading(true)
-    setDispSpent(0)
-    const { data: settings } = await supabase.from('user_settings').select('monthly_budget').eq('user_id', uid).maybeSingle()
-    const bg = settings?.monthly_budget || 15000
-    if (settings) setBudget(bg)
-    const { data: logs } = await supabase.from('expenses').select('*').eq('user_id', uid)
-      .gte('date', m + '-01').lte('date', m + '-31').order('created_at', { ascending: false })
-    const items = logs || []
-    setExpenses(items)
-    setLoading(false)
+    const key = `finance:${uid}:${m}`
+    const cached = cacheGet<Cache>(key)
+    if (cached) {
+      setBudget(cached.budget); setExpenses(cached.expenses); setWeek(cached.week); setLoading(false)
+      runAnimations(cached.expenses.reduce((s, e) => s + e.amount, 0), cached.budget, cached.expenses)
+    } else {
+      setLoading(true)
+      setDispSpent(0)
+    }
+
+    const days = lastNDays(7, todayStr())
+    const [settingsRes, logsRes, weekRes] = await Promise.all([
+      supabase.from('user_settings').select('monthly_budget').eq('user_id', uid).maybeSingle(),
+      supabase.from('expenses').select('*').eq('user_id', uid).gte('date', m + '-01').lte('date', m + '-31').order('created_at', { ascending: false }),
+      supabase.from('expenses').select('amount, date').eq('user_id', uid).gte('date', days[0]).lte('date', days[6]),
+    ])
+    const bg = settingsRes.data?.monthly_budget || 15000
+    const items = logsRes.data || []
+    const byDate: Record<string, number> = {}
+    weekRes.data?.forEach((r: { amount: number; date: string }) => { byDate[r.date] = (byDate[r.date] || 0) + r.amount })
+    const weekData: Day[] = days.map(d => ({ date: d, value: byDate[d] || 0 }))
+
+    cacheSet<Cache>(key, { expenses: items, budget: bg, week: weekData })
+    setBudget(bg); setExpenses(items); setWeek(weekData)
     const spent = items.reduce((s, e) => s + e.amount, 0)
-    runAnimations(spent, bg, items)
+    const changed = !cached || items.length !== cached.expenses.length || items.some((e, i) => e.id !== cached.expenses[i]?.id)
+    setLoading(false)
+    if (changed) {
+      runAnimations(spent, bg, items)
+    } else {
+      setDispSpent(spent)
+      if (barRef.current) animate(barRef.current, { width: `${Math.min(100, Math.round(spent / bg * 100))}%`, duration: 450, ease: 'outExpo' })
+    }
   }, [supabase, runAnimations])
 
   useEffect(() => {
@@ -102,13 +128,27 @@ export default function FinancePage() {
     const now = Date.now()
     const entry = { user_id: userId, name: name.trim(), amount: parseFloat(amount), category, date: todayStr(), updated_at: now, created_at: now }
     const { data } = await supabase.from('expenses').insert(entry).select().single()
-    if (data) setExpenses(prev => [data, ...prev])
+    if (data) {
+      const next = [data, ...expenses]
+      setExpenses(next)
+      adjustWeek(data.date, data.amount, next)
+    }
     setName(''); setAmount('')
   }
 
   const deleteExpense = async (id: string) => {
+    const removed = expenses.find(e => e.id === id)
     await supabase.from('expenses').delete().eq('id', id)
-    setExpenses(prev => prev.filter(e => e.id !== id))
+    const next = expenses.filter(e => e.id !== id)
+    setExpenses(next)
+    if (removed) adjustWeek(removed.date, -removed.amount, next)
+  }
+
+  // Apply an optimistic delta to the matching day of the week chart + cache.
+  const adjustWeek = (date: string, delta: number, items: Expense[]) => {
+    const next = week.map(d => d.date === date ? { ...d, value: Math.max(0, d.value + delta) } : d)
+    setWeek(next)
+    if (userId) cacheSet<Cache>(`finance:${userId}:${viewMonth}`, { expenses: items, budget, week: next })
   }
 
   const saveBudget = async () => {
@@ -129,74 +169,91 @@ export default function FinancePage() {
   const over = moneyLeft < 0
   const byCategory = CATS.map(cat => ({ cat, amt: expenses.filter(e => e.category === cat).reduce((s, e) => s + e.amount, 0) })).filter(c => c.amt > 0)
 
-  const inp = { background: theme.c2, border: `1px solid ${theme.border}`, borderRadius: 10, padding: '10px 12px', color: theme.txt, fontSize: 14, outline: 'none' } as const
-  const card = { background: theme.c1, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 18, marginBottom: 14 } as const
+  const s = styles(theme)
+  const inp = s.input
 
-  if (loading) return <div style={{ padding: 24, color: theme.muted }}>Loading...</div>
+  if (loading) return <Loader t={theme} />
 
   return (
-    <div style={{ padding: '20px 16px', maxWidth: 480, margin: '0 auto' }}>
+    <div style={s.page}>
 
-      <div ref={headerRef} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, opacity: 0 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: theme.accent, marginBottom: 2 }}>Finance</h1>
-          <p style={{ fontSize: 12, color: theme.sub }}>{fmtMonth(viewMonth)}</p>
-        </div>
-        <button onClick={() => { setShowHistory(!showHistory); if (showHistory) setViewMonth(new Date().toISOString().slice(0, 7)) }}
-          style={{ background: showHistory ? theme.accent + '22' : 'transparent', border: `1px solid ${showHistory ? theme.accent : theme.border}`, borderRadius: 9, padding: '6px 12px', fontSize: 12, color: showHistory ? theme.accent : theme.muted, cursor: 'pointer' }}>
-          {showHistory ? 'Back to Now' : '📅 History'}
-        </button>
+      <div ref={headerRef} style={{ opacity: 0 }}>
+        <PageHeader t={theme} eyebrow="Finance" title={fmtMonth(viewMonth)}
+          right={
+            <button className="luma-ghost" onClick={() => { setShowHistory(!showHistory); if (showHistory) setViewMonth(new Date().toISOString().slice(0, 7)) }}
+              style={{ ...s.ghostBtn, ...(showHistory ? { borderColor: theme.accent, color: theme.accent } : {}) }}>
+              <Icon name={showHistory ? 'arrowRight' : 'calendar'} size={14} />
+              {showHistory ? 'Now' : 'History'}
+            </button>
+          } />
       </div>
 
       {showHistory && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-          <button onClick={prevMonth} style={{ background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: 9, padding: '7px 14px', fontSize: 13, color: theme.muted, cursor: 'pointer' }}>←</button>
-          <div style={{ flex: 1, textAlign: 'center', fontSize: 13, color: theme.txt, fontWeight: 500 }}>{fmtMonth(viewMonth)}</div>
-          <button onClick={nextMonth} disabled={isCurrentMonth} style={{ background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: 9, padding: '7px 14px', fontSize: 13, color: isCurrentMonth ? theme.border : theme.muted, cursor: isCurrentMonth ? 'default' : 'pointer' }}>→</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <button className="luma-icon-btn" onClick={prevMonth} style={s.iconBtn}><Icon name="chevronLeft" size={16} /></button>
+          <div style={{ flex: 1, textAlign: 'center', fontSize: 13, color: theme.txt, fontWeight: 500, fontFamily: sans }}>{fmtMonth(viewMonth)}</div>
+          <button className="luma-icon-btn" onClick={nextMonth} disabled={isCurrentMonth} style={{ ...s.iconBtn, opacity: isCurrentMonth ? 0.35 : 1, cursor: isCurrentMonth ? 'default' : 'pointer' }}><Icon name="chevronRight" size={16} /></button>
         </div>
       )}
 
-      <div ref={summaryRef} style={{ ...card, opacity: 0 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: theme.txt, marginBottom: 4 }}>{isCurrentMonth ? 'Monthly Budget' : fmtMonth(viewMonth)}</div>
-            {!editingBudget && isCurrentMonth ? (
-              <div style={{ fontSize: 12, color: theme.muted }}>
-                Budget: <span style={{ color: theme.accent }}>৳{budget.toLocaleString()}</span>
-                <span onClick={() => { setTmpBudget(String(budget)); setEditingBudget(true) }} style={{ cursor: 'pointer', color: theme.sub, marginLeft: 8, fontSize: 11 }}>✎ edit</span>
-              </div>
-            ) : editingBudget ? (
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4 }}>
-                <input value={tmpBudget} onChange={e => setTmpBudget(e.target.value)} type="number" style={{ ...inp, width: 100, padding: '4px 8px', fontSize: 12 }} />
-                <button onClick={saveBudget} style={{ background: theme.accent, border: 'none', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: theme.bg }}>Save</button>
-                <button onClick={() => setEditingBudget(false)} style={{ background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: 8, padding: '4px 8px', fontSize: 12, color: theme.muted, cursor: 'pointer' }}>✕</button>
-              </div>
-            ) : (
-              <div style={{ fontSize: 12, color: theme.muted }}>Budget: <span style={{ color: theme.accent }}>৳{budget.toLocaleString()}</span></div>
-            )}
+      <div ref={summaryRef} className="luma-card" style={{ ...s.card, opacity: 0, display: 'flex', alignItems: 'center', gap: 22 }}>
+        <Ring size={128} stroke={12} pct={pct} color={pct > 90 ? theme.red : pct > 70 ? theme.accent : theme.green} track={theme.c2}>
+          <span style={{ fontFamily: serif, fontSize: 26, color: theme.txt, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{pct}%</span>
+          <span style={{ ...s.label, fontSize: 9, marginTop: 5 }}>spent</span>
+        </Ring>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <CardLabel t={theme} style={{ marginBottom: 10 }}>{over ? 'Over Budget' : 'Remaining'}</CardLabel>
+          <div style={{ fontFamily: serif, fontSize: 38, color: over ? theme.red : theme.green, lineHeight: 1, letterSpacing: '-0.02em' }}>
+            ৳{Math.abs(moneyLeft).toLocaleString()}
           </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 32, fontWeight: 700, color: over ? theme.red : theme.green, lineHeight: 1 }}>৳{Math.abs(moneyLeft).toLocaleString()}</div>
-            <div style={{ fontSize: 11, color: theme.muted, marginTop: 2 }}>{over ? 'over budget' : 'remaining'}</div>
+          <div style={{ fontSize: 12.5, color: theme.muted, marginTop: 6 }}>
+            ৳{dispSpent.toLocaleString()} of ৳{budget.toLocaleString()}
           </div>
-        </div>
-        <div style={{ background: theme.c2, borderRadius: 6, height: 7, overflow: 'hidden', marginBottom: 8 }}>
-          <div ref={barRef} style={{ height: '100%', borderRadius: 6, width: '0%', background: pct > 90 ? theme.red : pct > 70 ? theme.accent : theme.green }} />
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: theme.muted }}>
-          <span>{pct}% spent</span>
-          <span>Spent: <strong style={{ color: theme.txt }}>৳{dispSpent.toLocaleString()}</strong></span>
+
+          {isCurrentMonth && (
+            <div style={{ marginTop: 12 }}>
+              {editingBudget ? (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input className="luma-input" value={tmpBudget} onChange={e => setTmpBudget(e.target.value)} type="number" style={{ ...inp, width: 96, padding: '7px 9px', fontSize: 13 }} />
+                  <button className="luma-btn" onClick={saveBudget} style={{ ...s.primaryBtn, padding: '7px 12px', fontSize: 12 }}>Save</button>
+                  <button className="luma-icon-btn" onClick={() => setEditingBudget(false)} style={s.iconBtn}><Icon name="x" size={14} /></button>
+                </div>
+              ) : (
+                <div className="luma-link" onClick={() => { setTmpBudget(String(budget)); setEditingBudget(true) }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: theme.muted, fontFamily: sans }}>
+                  <span style={{ ...s.label }}>Budget</span>
+                  <span style={{ color: theme.accent, fontWeight: 600 }}>৳{budget.toLocaleString()}</span>
+                  <Icon name="edit" size={12} />
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
+      {isCurrentMonth && week.length > 0 && (
+        <div className="luma-card" style={s.card}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 18 }}>
+            <CardLabel t={theme} style={{ marginBottom: 0 }}>Last 7 Days</CardLabel>
+            <span style={{ fontSize: 11.5, color: theme.muted, fontFamily: sans }}>
+              total <strong style={{ color: theme.txt, fontFamily: serif, fontSize: 15 }}>৳{week.reduce((a, d) => a + d.value, 0).toLocaleString()}</strong>
+            </span>
+          </div>
+          <WeekChart t={theme} color={theme.accent} data={week} fmt={v => '৳' + Math.round(v).toLocaleString()} />
+        </div>
+      )}
+
       {byCategory.length > 0 && (
-        <div ref={catRef} style={{ ...card, opacity: 0 }}>
-          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.8px', color: theme.sub, marginBottom: 12 }}>By Category</div>
+        <div ref={catRef} className="luma-card" style={{ ...s.card, opacity: 0 }}>
+          <CardLabel t={theme}>By Category</CardLabel>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {byCategory.map(({ cat, amt }) => (
-              <div key={cat} className="cat-cell" style={{ background: theme.c2, borderRadius: 10, padding: '8px 12px', flex: '1', minWidth: 80, opacity: 0 }}>
-                <div style={{ fontSize: 11, color: CAT_COLORS[cat], marginBottom: 2 }}>{cat}</div>
-                <div style={{ fontSize: 15, fontWeight: 600, color: theme.txt }}>৳{amt.toLocaleString()}</div>
+              <div key={cat} className="cat-cell" style={{ background: theme.c2, border: `1px solid ${theme.border}`, borderRadius: 14, padding: '11px 14px', flex: '1', minWidth: 88, opacity: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: 999, background: CAT_COLORS[cat], flexShrink: 0 }} />
+                  <span style={{ fontSize: 11, color: theme.muted, fontFamily: sans }}>{cat}</span>
+                </div>
+                <div style={{ fontSize: 20, color: theme.txt, fontFamily: serif, fontVariantNumeric: 'tabular-nums' }}>৳{amt.toLocaleString()}</div>
               </div>
             ))}
           </div>
@@ -204,42 +261,39 @@ export default function FinancePage() {
       )}
 
       {isCurrentMonth && (
-        <div ref={formRef} style={{ ...card, opacity: 0 }}>
-          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.8px', color: theme.sub, marginBottom: 10 }}>Add Expense</div>
-          <input value={name} onChange={e => setName(e.target.value)} placeholder="What did you spend on?"
+        <div ref={formRef} className="luma-card" style={{ ...s.card, opacity: 0 }}>
+          <CardLabel t={theme}>Add Expense</CardLabel>
+          <input className="luma-input" value={name} onChange={e => setName(e.target.value)} placeholder="What did you spend on?"
             style={{ ...inp, width: '100%', marginBottom: 10, boxSizing: 'border-box' }} />
-          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-            <input value={amount} onChange={e => setAmount(e.target.value)} type="number" placeholder="Amount (৳)" onKeyDown={e => e.key === 'Enter' && addExpense()}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            <input className="luma-input" value={amount} onChange={e => setAmount(e.target.value)} type="number" placeholder="Amount (৳)" onKeyDown={e => e.key === 'Enter' && addExpense()}
               style={{ ...inp, flex: 1 }} />
-            <select value={category} onChange={e => setCategory(e.target.value)} style={{ ...inp, cursor: 'pointer' }}>
+            <select className="luma-input" value={category} onChange={e => setCategory(e.target.value)} style={{ ...inp, cursor: 'pointer' }}>
               {CATS.map(c => <option key={c}>{c}</option>)}
             </select>
           </div>
-          <button onClick={addExpense} style={{ width: '100%', background: theme.accent, border: 'none', borderRadius: 10, padding: '10px 0', fontSize: 14, fontWeight: 700, cursor: 'pointer', color: theme.bg }}>Add Expense</button>
+          <button className="luma-btn" onClick={addExpense} style={{ ...s.primaryBtn, width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><Icon name="plus" size={16} stroke={2} />Add Expense</button>
         </div>
       )}
 
       {expenses.length > 0 ? (
-        <div ref={listRef} style={card}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: theme.txt, marginBottom: 14 }}>{isCurrentMonth ? 'This Month' : fmtMonth(viewMonth)}</div>
+        <div ref={listRef} className="luma-card" style={s.card}>
+          <CardLabel t={theme}>{isCurrentMonth ? 'This Month' : fmtMonth(viewMonth)}</CardLabel>
           {expenses.map((e, i) => (
-            <div key={e.id} className="exp-item" style={{ display: 'flex', alignItems: 'center', padding: '9px 0', borderBottom: i < expenses.length - 1 ? `1px solid ${theme.border}` : 'none', gap: 8, opacity: 0 }}>
-              <div style={{ flex: 1, fontSize: 14, color: theme.txt, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.name}</div>
-              <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 600, background: CAT_COLORS[e.category] + '22', color: CAT_COLORS[e.category], flexShrink: 0 }}>{e.category}</span>
-              <div style={{ fontSize: 13, color: theme.muted, flexShrink: 0 }}>৳{e.amount.toLocaleString()}</div>
-              {isCurrentMonth && <button onClick={() => deleteExpense(e.id)} style={{ background: 'transparent', border: `1px solid ${theme.border}`, color: theme.sub, borderRadius: 7, padding: '3px 8px', fontSize: 11, cursor: 'pointer' }}>✕</button>}
+            <div key={e.id} className="exp-item luma-row" style={{ display: 'flex', alignItems: 'center', padding: '11px 0', borderBottom: i < expenses.length - 1 ? `1px solid ${theme.border}` : 'none', gap: 9, opacity: 0 }}>
+              <div style={{ flex: 1, fontSize: 14, color: theme.txt, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: sans }}>{e.name}</div>
+              <span style={s.chip(CAT_COLORS[e.category])}>{e.category}</span>
+              <div style={{ fontFamily: serif, fontSize: 17, color: theme.muted, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>৳{e.amount.toLocaleString()}</div>
+              {isCurrentMonth && <button className="luma-del luma-icon-btn" onClick={() => deleteExpense(e.id)} style={{ ...s.iconBtn, width: 24, height: 24 }}><Icon name="x" size={13} /></button>}
             </div>
           ))}
-          <div style={{ paddingTop: 10, fontSize: 13, color: theme.muted, borderTop: `1px solid ${theme.border}`, marginTop: 4, display: 'flex', justifyContent: 'space-between' }}>
+          <div style={{ paddingTop: 12, fontSize: 13, color: theme.muted, borderTop: `1px solid ${theme.border}`, marginTop: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontFamily: sans }}>
             <span>{expenses.length} {expenses.length === 1 ? 'expense' : 'expenses'}</span>
-            <span>Total: <strong style={{ color: theme.txt }}>৳{totalSpent.toLocaleString()}</strong></span>
+            <span>Total <strong style={{ color: theme.txt, fontFamily: serif, fontSize: 17, marginLeft: 4 }}>৳{totalSpent.toLocaleString()}</strong></span>
           </div>
         </div>
       ) : (
-        <div style={{ textAlign: 'center', padding: '36px 0', color: theme.sub }}>
-          <div style={{ fontSize: 36, marginBottom: 10 }}>💳</div>
-          <div style={{ fontSize: 13 }}>{isCurrentMonth ? 'No expenses this month yet.' : 'No expenses this month.'}</div>
-        </div>
+        <EmptyState t={theme} icon="finance" text={isCurrentMonth ? 'No expenses this month yet.' : 'No expenses this month.'} />
       )}
     </div>
   )

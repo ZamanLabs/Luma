@@ -5,6 +5,15 @@ import { useEffect, useCallback, useState, useRef } from 'react'
 import { useTheme } from '../../ThemeContext'
 import { useRouter } from 'next/navigation'
 import { animate, stagger } from 'animejs'
+import { Icon, Ring, WeekChart, tileStyle, lastNDays, serif, sans } from '../ui'
+import { cacheGet, cacheSet } from '../cache'
+
+type Pill = { id: string; name: string; scheduled_time: string }
+type Day = { date: string; value: number }
+type Snapshot = {
+  name: string; cg: number; bg: number; cals: number; spent: number
+  mins: number; actsCount: number; pills: Pill[]; taken: string[]; week: Day[]
+}
 
 const todayStr = () => new Date().toISOString().slice(0, 10)
 const thisMonth = () => new Date().toISOString().slice(0, 7)
@@ -25,10 +34,6 @@ const isDue = (t: string) => {
   return diff >= -10 && diff <= 30
 }
 
-const FONTS = `
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400&family=DM+Sans:wght@300;400;500&display=swap');
-`
-
 export default function HomePage() {
   const supabase = createClient()
   const { theme } = useTheme()
@@ -41,10 +46,11 @@ export default function HomePage() {
   const [totalSpent, setTotalSpent] = useState(0)
   const [totalMins, setTotalMins] = useState(0)
   const [actCount, setActCount] = useState(0)
-  const [pills, setPills] = useState<{ id: string; name: string; scheduled_time: string }[]>([])
+  const [pills, setPills] = useState<Pill[]>([])
   const [takenIds, setTakenIds] = useState<string[]>([])
   const [userName, setUserName] = useState('')
   const [hovered, setHovered] = useState<string | null>(null)
+  const [week, setWeek] = useState<Day[]>([])
 
   const [dispCals, setDispCals] = useState(0)
   const [dispSpent, setDispSpent] = useState(0)
@@ -59,135 +65,83 @@ export default function HomePage() {
   const greetingRef = useRef<HTMLDivElement>(null)
 
   const loadAll = useCallback(async () => {
+    const applyState = (d: Snapshot) => {
+      setUserName(d.name); setCalGoal(d.cg); setBudget(d.bg)
+      setTotalCals(d.cals); setTotalSpent(d.spent); setTotalMins(d.mins)
+      setActCount(d.actsCount); setPills(d.pills); setTakenIds(d.taken); setWeek(d.week)
+    }
+
+    const pctOf = (a: number, b: number) => Math.min(100, Math.round(a / b * 100))
+
+    // Full entrance: fade/stagger sections + count-up numbers + grow bars.
+    const reveal = (d: Snapshot) => setTimeout(() => {
+      if (greetingRef.current) animate(greetingRef.current, { opacity: [0, 1], translateY: [20, 0], duration: 700, ease: 'outExpo' })
+      if (sectionsRef.current) animate(sectionsRef.current.querySelectorAll('.home-section'), { opacity: [0, 1], translateY: [24, 0], delay: stagger(100, { start: 200 }), duration: 700, ease: 'outExpo' })
+
+      const cu = (to: number, dur: number, delay: number, set: (n: number) => void) => {
+        const o = { val: 0 }
+        animate(o, { val: { to }, duration: dur, delay, ease: 'outExpo', onUpdate: () => set(Math.round(o.val)) })
+      }
+      cu(d.cals, 1200, 300, setDispCals)
+      cu(d.spent, 1200, 400, setDispSpent)
+      cu(d.mins, 1000, 500, setDispMins)
+      cu(d.actsCount, 800, 500, setDispActs)
+      cu(d.taken.length, 800, 600, setDispPillsDone)
+
+      const pillsPct = d.pills.length > 0 ? Math.round(d.taken.length / d.pills.length * 100) : 0
+      if (calBarRef.current) animate(calBarRef.current, { width: ['0%', `${pctOf(d.cals, d.cg)}%`], duration: 1200, delay: 400, ease: 'outExpo' })
+      if (budgetBarRef.current) animate(budgetBarRef.current, { width: ['0%', `${pctOf(d.spent, d.bg)}%`], duration: 1200, delay: 500, ease: 'outExpo' })
+      if (pillsBarRef.current) animate(pillsBarRef.current, { width: ['0%', `${pillsPct}%`], duration: 1000, delay: 600, ease: 'outExpo' })
+    }, 50)
+
+    // Silent refresh after an instant cache render — just settle to final values.
+    const syncFinal = (d: Snapshot) => {
+      setDispCals(d.cals); setDispSpent(d.spent); setDispMins(d.mins)
+      setDispActs(d.actsCount); setDispPillsDone(d.taken.length)
+      const pillsPct = d.pills.length > 0 ? Math.round(d.taken.length / d.pills.length * 100) : 0
+      if (calBarRef.current) animate(calBarRef.current, { width: `${pctOf(d.cals, d.cg)}%`, duration: 450, ease: 'outExpo' })
+      if (budgetBarRef.current) animate(budgetBarRef.current, { width: `${pctOf(d.spent, d.bg)}%`, duration: 450, ease: 'outExpo' })
+      if (pillsBarRef.current) animate(pillsBarRef.current, { width: `${pillsPct}%`, duration: 450, ease: 'outExpo' })
+    }
+
+    const cached = cacheGet<Snapshot>('home')
+    if (cached) { applyState(cached); setLoading(false); reveal(cached) }
+
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-    setUserName(user.user_metadata?.full_name?.split(' ')[0] || '')
 
-    const [settings, foods, expenses, acts, pillData, takenData] = await Promise.all([
+    const days = lastNDays(7, todayStr())
+    const [settings, foods, expenses, acts, pillData, takenData, weekActs] = await Promise.all([
       supabase.from('user_settings').select('calorie_goal, monthly_budget').eq('user_id', user.id).maybeSingle(),
       supabase.from('food_logs').select('calories').eq('user_id', user.id).eq('date', todayStr()),
       supabase.from('expenses').select('amount').eq('user_id', user.id).gte('date', thisMonth() + '-01'),
       supabase.from('exercise_logs').select('duration_minutes').eq('user_id', user.id).eq('date', todayStr()),
       supabase.from('pills').select('id, name, scheduled_time').eq('user_id', user.id).order('scheduled_time', { ascending: true }),
       supabase.from('pills_taken').select('pill_id').eq('user_id', user.id).eq('date_taken', todayStr()),
+      supabase.from('exercise_logs').select('duration_minutes, date').eq('user_id', user.id).gte('date', days[0]).lte('date', days[6]),
     ])
 
-    const cg = settings.data?.calorie_goal || 2000
-    const bg = settings.data?.monthly_budget || 15000
-    const cals = foods.data?.reduce((s, f) => s + f.calories, 0) || 0
-    const spent = expenses.data?.reduce((s, e) => s + e.amount, 0) || 0
-    const mins = acts.data?.reduce((s, a) => s + a.duration_minutes, 0) || 0
-    const actsCount = acts.data?.length || 0
-    const pillsList = pillData.data || []
-    const takenList = takenData.data?.map((t: { pill_id: string }) => t.pill_id) || []
+    const byDate: Record<string, number> = {}
+    weekActs.data?.forEach((r: { duration_minutes: number; date: string }) => { byDate[r.date] = (byDate[r.date] || 0) + r.duration_minutes })
 
-    setCalGoal(cg)
-    setBudget(bg)
-    setTotalCals(cals)
-    setTotalSpent(spent)
-    setTotalMins(mins)
-    setActCount(actsCount)
-    setPills(pillsList)
-    setTakenIds(takenList)
+    const snap: Snapshot = {
+      name: user.user_metadata?.full_name?.split(' ')[0] || '',
+      cg: settings.data?.calorie_goal || 2000,
+      bg: settings.data?.monthly_budget || 15000,
+      cals: foods.data?.reduce((s, f) => s + f.calories, 0) || 0,
+      spent: expenses.data?.reduce((s, e) => s + e.amount, 0) || 0,
+      mins: acts.data?.reduce((s, a) => s + a.duration_minutes, 0) || 0,
+      actsCount: acts.data?.length || 0,
+      pills: pillData.data || [],
+      taken: takenData.data?.map((t: { pill_id: string }) => t.pill_id) || [],
+      week: days.map(d => ({ date: d, value: byDate[d] || 0 })),
+    }
+
+    cacheSet('home', snap)
+    applyState(snap)
     setLoading(false)
-
-    setTimeout(() => {
-      if (greetingRef.current) {
-        animate(greetingRef.current, {
-          opacity: [0, 1],
-          translateY: [20, 0],
-          duration: 700,
-          ease: 'outExpo',
-        })
-      }
-
-      if (sectionsRef.current) {
-        animate(
-          sectionsRef.current.querySelectorAll('.home-section'),
-          {
-            opacity: [0, 1],
-            translateY: [24, 0],
-            delay: stagger(100, { start: 200 }),
-            duration: 700,
-            ease: 'outExpo',
-          }
-        )
-      }
-
-      const calsObj = { val: 0 }
-      animate(calsObj, {
-        val: { to: cals },
-        duration: 1200,
-        delay: 300,
-        ease: 'outExpo',
-        onUpdate: () => setDispCals(Math.round(calsObj.val)),
-      })
-
-      const spentObj = { val: 0 }
-      animate(spentObj, {
-        val: { to: spent },
-        duration: 1200,
-        delay: 400,
-        ease: 'outExpo',
-        onUpdate: () => setDispSpent(Math.round(spentObj.val)),
-      })
-
-      const minsObj = { val: 0 }
-      animate(minsObj, {
-        val: { to: mins },
-        duration: 1000,
-        delay: 500,
-        ease: 'outExpo',
-        onUpdate: () => setDispMins(Math.round(minsObj.val)),
-      })
-
-      const actsObj = { val: 0 }
-      animate(actsObj, {
-        val: { to: actsCount },
-        duration: 800,
-        delay: 500,
-        ease: 'outExpo',
-        onUpdate: () => setDispActs(Math.round(actsObj.val)),
-      })
-
-      const pillsObj = { val: 0 }
-      animate(pillsObj, {
-        val: { to: takenList.length },
-        duration: 800,
-        delay: 600,
-        ease: 'outExpo',
-        onUpdate: () => setDispPillsDone(Math.round(pillsObj.val)),
-      })
-
-      const calPct = Math.min(100, Math.round(cals / cg * 100))
-      const budgetPct = Math.min(100, Math.round(spent / bg * 100))
-      const pillsPct = pillsList.length > 0 ? Math.round(takenList.length / pillsList.length * 100) : 0
-
-      if (calBarRef.current) {
-        animate(calBarRef.current, {
-          width: ['0%', `${calPct}%`],
-          duration: 1200,
-          delay: 400,
-          ease: 'outExpo',
-        })
-      }
-      if (budgetBarRef.current) {
-        animate(budgetBarRef.current, {
-          width: ['0%', `${budgetPct}%`],
-          duration: 1200,
-          delay: 500,
-          ease: 'outExpo',
-        })
-      }
-      if (pillsBarRef.current) {
-        animate(pillsBarRef.current, {
-          width: ['0%', `${pillsPct}%`],
-          duration: 1000,
-          delay: 600,
-          ease: 'outExpo',
-        })
-      }
-    }, 50)
+    if (cached) syncFinal(snap)
+    else reveal(snap)
   }, [supabase])
 
   useEffect(() => { loadAll() }, [loadAll])
@@ -203,188 +157,148 @@ export default function HomePage() {
   const allDone = pillsTotal > 0 && pillsDoneCount === pillsTotal
 
   const label = {
-    fontFamily: "'DM Sans', sans-serif",
+    fontFamily: sans,
     fontSize: 10,
-    letterSpacing: '0.12em',
+    letterSpacing: '0.16em',
     textTransform: 'uppercase' as const,
     color: theme.sub,
-    fontWeight: 500,
+    fontWeight: 600,
   }
 
-  const bigNum = {
-    fontFamily: "'Cormorant Garamond', serif",
-    fontSize: 68,
-    fontWeight: 300,
-    lineHeight: 1,
-    fontVariantNumeric: 'tabular-nums',
-    letterSpacing: '-0.02em',
-  }
+  const TileHead = ({ icon, name, accent }: { icon: string; name: string; accent: string }) => (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          width: 30, height: 30, borderRadius: 10, color: accent,
+          background: `color-mix(in srgb, ${accent} 16%, transparent)`,
+          border: `1px solid color-mix(in srgb, ${accent} 26%, transparent)`,
+        }}><Icon name={icon} size={16} stroke={1.8} /></span>
+        <span style={label}>{name}</span>
+      </div>
+      <span style={{ color: theme.muted, opacity: 0.45, display: 'flex' }}><Icon name="arrowRight" size={16} stroke={1.6} /></span>
+    </div>
+  )
 
-  const unit = {
-    fontFamily: "'DM Sans', sans-serif",
-    fontSize: 13,
-    color: theme.muted,
-    fontWeight: 300,
-    marginLeft: 6,
-    alignSelf: 'flex-end' as const,
-    paddingBottom: 10,
-  }
+  const dim = (id: string): React.CSSProperties => ({ opacity: hovered && hovered !== id ? 0.5 : 1, transition: 'opacity .25s, transform .25s, border-color .25s' })
+  const hover = (id: string) => ({ onMouseEnter: () => setHovered(id), onMouseLeave: () => setHovered(null) })
 
-  const section = (id: string) => ({
-    padding: '28px 0',
-    borderBottom: `1px solid ${theme.border}`,
-    cursor: 'pointer',
-    transition: 'opacity .2s',
-    opacity: hovered && hovered !== id ? 0.4 : 1,
-  })
+  const nutColor = calLeft < 0 ? theme.red : theme.green
+  const finColor = moneyLeft < 0 ? theme.red : budgetPct > 70 ? theme.accent : theme.green
+  const medColor = allDone ? theme.green : hasDue ? theme.accent : theme.blue
+  const pillsPct = pillsTotal > 0 ? Math.round(pillsDoneCount / pillsTotal * 100) : 0
 
   if (loading) return (
-    <>
-      <style>{FONTS}</style>
-      <div style={{ padding: 24, color: theme.muted, fontFamily: "'DM Sans', sans-serif", fontSize: 13 }}>Loading...</div>
-    </>
+    <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: serif, fontSize: 26, color: theme.muted, letterSpacing: '0.04em' }}>
+      <span style={{ animation: 'lumaPulse 1.8s ease-in-out infinite' }}>Luma</span>
+    </div>
   )
 
   return (
-    <>
-      <style>{FONTS}</style>
-      <div style={{ padding: '32px 24px', maxWidth: 480, margin: '0 auto', fontFamily: "'DM Sans', sans-serif" }}>
+    <div style={{ padding: '40px 18px 24px', maxWidth: 540, margin: '0 auto', fontFamily: sans }}>
 
-        <div ref={greetingRef} style={{ marginBottom: 40, opacity: 0 }}>
-          <div style={{ ...label, marginBottom: 4 }}>{greeting()}</div>
-          <div style={{
-            fontFamily: "'Cormorant Garamond', serif",
-            fontSize: 42, fontWeight: 300, color: theme.txt,
-            lineHeight: 1.1, letterSpacing: '-0.02em', marginBottom: 6,
-          }}>
+      <div ref={greetingRef} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 30, opacity: 0 }}>
+        <div>
+          <div style={{ ...label, marginBottom: 8 }}>{greeting()}</div>
+          <div style={{ fontFamily: serif, fontSize: 46, fontWeight: 400, color: theme.txt, lineHeight: 1.0, letterSpacing: '-0.02em', marginBottom: 9 }}>
             {userName || 'Wakib'}
           </div>
-          <div style={{ fontSize: 12, color: theme.sub, fontWeight: 300 }}>
+          <div style={{ fontSize: 12.5, color: theme.sub, fontWeight: 400 }}>
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
           </div>
         </div>
-
-        <div ref={sectionsRef}>
-
-          {/* Nutrition */}
-          <div
-            className="home-section"
-            style={{ ...section('nutrition'), opacity: 0 }}
-            onClick={() => router.push('/dashboard/nutrition')}
-            onMouseEnter={() => setHovered('nutrition')}
-            onMouseLeave={() => setHovered(null)}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ ...label, marginBottom: 16 }}>Nutrition</div>
-                <div style={{ display: 'flex', alignItems: 'flex-end', marginBottom: 16 }}>
-                  <span style={{ ...bigNum, color: calLeft < 0 ? theme.red : theme.txt }}>{dispCals.toLocaleString()}</span>
-                  <span style={unit}>kcal eaten</span>
-                </div>
-                <div style={{ background: theme.c2, borderRadius: 2, height: 3, overflow: 'hidden', marginBottom: 8, maxWidth: 200 }}>
-                  <div ref={calBarRef} style={{ height: '100%', borderRadius: 2, width: '0%', background: calPct > 100 ? theme.red : calPct > 80 ? theme.accent : theme.green }} />
-                </div>
-                <div style={{ fontSize: 12, color: calLeft < 0 ? theme.red : theme.green }}>
-                  {calLeft < 0 ? `${Math.abs(calLeft).toLocaleString()} kcal over` : `${calLeft.toLocaleString()} kcal remaining`}
-                </div>
-              </div>
-              <div style={{ fontSize: 18, opacity: .25, alignSelf: 'center' }}>→</div>
-            </div>
-          </div>
-
-          {/* Finance */}
-          <div
-            className="home-section"
-            style={{ ...section('finance'), opacity: 0 }}
-            onClick={() => router.push('/dashboard/finance')}
-            onMouseEnter={() => setHovered('finance')}
-            onMouseLeave={() => setHovered(null)}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ ...label, marginBottom: 16 }}>Finance</div>
-                <div style={{ display: 'flex', alignItems: 'flex-end', marginBottom: 16 }}>
-                  <span style={{ ...bigNum, color: moneyLeft < 0 ? theme.red : theme.txt }}>
-                    ৳{Math.abs(budget - dispSpent).toLocaleString()}
-                  </span>
-                  <span style={unit}>{moneyLeft < 0 ? 'over budget' : 'remaining'}</span>
-                </div>
-                <div style={{ background: theme.c2, borderRadius: 2, height: 3, overflow: 'hidden', marginBottom: 8, maxWidth: 200 }}>
-                  <div ref={budgetBarRef} style={{ height: '100%', borderRadius: 2, width: '0%', background: budgetPct > 90 ? theme.red : budgetPct > 70 ? theme.accent : theme.green }} />
-                </div>
-                <div style={{ fontSize: 12, color: theme.muted }}>
-                  ৳{dispSpent.toLocaleString()} of ৳{budget.toLocaleString()} spent
-                </div>
-              </div>
-              <div style={{ fontSize: 18, opacity: .25, alignSelf: 'center' }}>→</div>
-            </div>
-          </div>
-
-          {/* Exercise */}
-          <div
-            className="home-section"
-            style={{ ...section('exercise'), opacity: 0 }}
-            onClick={() => router.push('/dashboard/exercise')}
-            onMouseEnter={() => setHovered('exercise')}
-            onMouseLeave={() => setHovered(null)}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ ...label, marginBottom: 16 }}>Movement</div>
-                <div style={{ display: 'flex', alignItems: 'flex-end', marginBottom: 10, gap: 32 }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-                    <span style={{ ...bigNum, color: totalMins > 0 ? theme.txt : theme.sub }}>{dispMins}</span>
-                    <span style={unit}>min</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-                    <span style={{ ...bigNum, fontSize: 40, color: actCount > 0 ? theme.txt : theme.sub }}>{dispActs}</span>
-                    <span style={unit}>activities</span>
-                  </div>
-                </div>
-                <div style={{ fontSize: 12, color: theme.muted }}>
-                  {totalMins === 0 ? 'No movement logged today' : `${(totalMins / 60).toFixed(1)} hours total`}
-                </div>
-              </div>
-              <div style={{ fontSize: 18, opacity: .25, alignSelf: 'center' }}>→</div>
-            </div>
-          </div>
-
-          {/* Medications */}
-          <div
-            className="home-section"
-            style={{ ...section('meds'), borderBottom: 'none', opacity: 0 }}
-            onClick={() => router.push('/dashboard/meds')}
-            onMouseEnter={() => setHovered('meds')}
-            onMouseLeave={() => setHovered(null)}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ ...label, marginBottom: 16 }}>Medications</div>
-                {pillsTotal === 0 ? (
-                  <div style={{ fontSize: 15, color: theme.sub, fontWeight: 300 }}>No medications scheduled</div>
-                ) : (
-                  <>
-                    <div style={{ display: 'flex', alignItems: 'flex-end', marginBottom: 12, gap: 2 }}>
-                      <span style={{ ...bigNum, color: allDone ? theme.green : hasDue ? theme.accent : theme.txt }}>{dispPillsDone}</span>
-                      <span style={{ ...bigNum, fontSize: 40, color: theme.sub, margin: '0 4px', paddingBottom: 8 }}>/</span>
-                      <span style={{ ...bigNum, fontSize: 40, color: theme.sub, paddingBottom: 8 }}>{pillsTotal}</span>
-                      <span style={unit}>taken</span>
-                    </div>
-                    <div style={{ background: theme.c2, borderRadius: 2, height: 3, overflow: 'hidden', marginBottom: 8, maxWidth: 200 }}>
-                      <div ref={pillsBarRef} style={{ height: '100%', borderRadius: 2, width: '0%', background: allDone ? theme.green : theme.accent }} />
-                    </div>
-                    <div style={{ fontSize: 12, color: allDone ? theme.green : hasDue ? theme.accent : theme.muted }}>
-                      {allDone ? '✓ All medications taken' : hasDue ? '⚡ Due now' : nextPill ? `Next: ${nextPill.name} at ${nextPill.scheduled_time}` : ''}
-                    </div>
-                  </>
-                )}
-              </div>
-              <div style={{ fontSize: 18, opacity: .25, alignSelf: 'center' }}>→</div>
-            </div>
-          </div>
-
-        </div>
+        <div style={{
+          width: 50, height: 50, borderRadius: '50%', flexShrink: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontFamily: serif, fontSize: 22, color: theme.accent,
+          background: `linear-gradient(150deg, color-mix(in srgb, ${theme.accent} 26%, ${theme.c1}), ${theme.c1})`,
+          border: `1px solid color-mix(in srgb, ${theme.accent} 32%, ${theme.border})`,
+          boxShadow: `0 8px 22px -12px ${theme.accent}`,
+        }}>{(userName || 'W').charAt(0).toUpperCase()}</div>
       </div>
-    </>
+
+      <div ref={sectionsRef} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 13 }}>
+
+        {/* Nutrition — hero ring (full width) */}
+        <div className="home-section luma-card" style={{ ...tileStyle(theme, nutColor), gridColumn: 'span 2', opacity: 0, display: 'flex', alignItems: 'center', gap: 20, ...dim('nutrition') }}
+          onClick={() => router.push('/dashboard/nutrition')} {...hover('nutrition')}>
+          <Ring size={118} stroke={11} pct={calPct} color={nutColor} track={theme.c2}>
+            <span style={{ fontFamily: serif, fontSize: 30, color: theme.txt, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{dispCals.toLocaleString()}</span>
+            <span style={{ ...label, fontSize: 9, marginTop: 4 }}>kcal</span>
+          </Ring>
+          <div style={{ flex: 1 }}>
+            <TileHead icon="nutrition" name="Nutrition" accent={nutColor} />
+            <div style={{ fontFamily: serif, fontSize: 34, color: nutColor, lineHeight: 1, letterSpacing: '-0.02em' }}>
+              {calLeft < 0 ? `${Math.abs(calLeft).toLocaleString()}` : calLeft.toLocaleString()}
+            </div>
+            <div style={{ fontSize: 12.5, color: theme.muted, marginTop: 6 }}>
+              {calLeft < 0 ? 'kcal over goal' : `kcal left of ${calGoal.toLocaleString()}`}
+            </div>
+          </div>
+        </div>
+
+        {/* Finance — ring tile */}
+        <div className="home-section luma-card" style={{ ...tileStyle(theme, finColor), opacity: 0, ...dim('finance') }}
+          onClick={() => router.push('/dashboard/finance')} {...hover('finance')}>
+          <TileHead icon="finance" name="Finance" accent={finColor} />
+          <div style={{ display: 'flex', justifyContent: 'center', margin: '4px 0 2px' }}>
+            <Ring size={104} stroke={10} pct={budgetPct} color={finColor} track={theme.c2}>
+              <span style={{ fontFamily: serif, fontSize: 20, color: moneyLeft < 0 ? theme.red : theme.txt, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>৳{Math.abs(budget - dispSpent).toLocaleString()}</span>
+              <span style={{ ...label, fontSize: 8.5, marginTop: 4 }}>{moneyLeft < 0 ? 'over' : 'left'}</span>
+            </Ring>
+          </div>
+          <div style={{ fontSize: 11.5, color: theme.muted, textAlign: 'center', marginTop: 8 }}>
+            ৳{dispSpent.toLocaleString()} spent
+          </div>
+        </div>
+
+        {/* Medications — ring tile */}
+        <div className="home-section luma-card" style={{ ...tileStyle(theme, medColor), opacity: 0, ...dim('meds') }}
+          onClick={() => router.push('/dashboard/meds')} {...hover('meds')}>
+          <TileHead icon="meds" name="Meds" accent={medColor} />
+          {pillsTotal === 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 138, gap: 6, color: theme.sub }}>
+              <Icon name="meds" size={26} stroke={1.4} />
+              <span style={{ fontSize: 12, fontFamily: serif, fontStyle: 'italic' }}>None scheduled</span>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'center', margin: '4px 0 2px' }}>
+                <Ring size={104} stroke={10} pct={pillsPct} color={medColor} track={theme.c2}>
+                  <span style={{ fontFamily: serif, fontSize: 24, color: theme.txt, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{dispPillsDone}<span style={{ color: theme.sub, fontSize: 17 }}>/{pillsTotal}</span></span>
+                  <span style={{ ...label, fontSize: 8.5, marginTop: 4 }}>taken</span>
+                </Ring>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, fontSize: 11.5, marginTop: 8, color: medColor }}>
+                {allDone ? <Icon name="check" size={13} stroke={2.2} /> : hasDue ? <Icon name="clock" size={12} stroke={1.9} /> : null}
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{allDone ? 'All taken' : hasDue ? 'Due now' : nextPill ? nextPill.scheduled_time : ''}</span>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Movement — wide tile with week bars */}
+        <div className="home-section luma-card" style={{ ...tileStyle(theme, theme.accent), gridColumn: 'span 2', opacity: 0, ...dim('exercise') }}
+          onClick={() => router.push('/dashboard/exercise')} {...hover('exercise')}>
+          <TileHead icon="move" name="Movement" accent={theme.accent} />
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 22, marginBottom: week.some(d => d.value > 0) ? 18 : 0 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+              <span style={{ fontFamily: serif, fontSize: 40, color: totalMins > 0 ? theme.txt : theme.sub, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{dispMins}</span>
+              <span style={{ fontSize: 12.5, color: theme.muted }}>min</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+              <span style={{ fontFamily: serif, fontSize: 28, color: actCount > 0 ? theme.txt : theme.sub, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{dispActs}</span>
+              <span style={{ fontSize: 12.5, color: theme.muted }}>{actCount === 1 ? 'activity' : 'activities'}</span>
+            </div>
+            <div style={{ flex: 1 }} />
+            <div style={{ fontSize: 11.5, color: theme.muted, paddingBottom: 4 }}>{totalMins === 0 ? 'Nothing yet today' : `${(totalMins / 60).toFixed(1)} h total`}</div>
+          </div>
+          {week.some(d => d.value > 0) && (
+            <WeekChart t={theme} color={theme.accent} data={week} fmt={v => Math.round(v) + 'm'} />
+          )}
+        </div>
+
+      </div>
+    </div>
   )
 }

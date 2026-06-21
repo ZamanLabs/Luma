@@ -4,6 +4,10 @@ import { createClient } from '@/utils/supabase/client'
 import { useEffect, useCallback, useState, useRef } from 'react'
 import { useTheme } from '../../ThemeContext'
 import { animate, stagger } from 'animejs'
+import { styles, PageHeader, CardLabel, Loader, EmptyState, Ring, Icon, serif, sans } from '../ui'
+import { cacheGet, cacheSet } from '../cache'
+
+type MedCache = { pills: Pill[]; taken: string[] }
 
 type Pill = { id: string; name: string; scheduled_time: string }
 type PillTaken = { pill_id: string }
@@ -59,15 +63,31 @@ export default function MedsPage() {
   }, [])
 
   const loadData = useCallback(async (date: string, uid: string) => {
-    setLoading(true)
-    const { data: pillData } = await supabase.from('pills').select('*').eq('user_id', uid).order('scheduled_time', { ascending: true })
-    const { data: takenData } = await supabase.from('pills_taken').select('pill_id').eq('user_id', uid).eq('date_taken', date)
-    const pillsList = pillData || []
-    const takenList = takenData?.map((t: PillTaken) => t.pill_id) || []
+    const key = `meds:${uid}:${date}`
+    const cached = cacheGet<MedCache>(key)
+    if (cached) {
+      setPills(cached.pills); setTaken(cached.taken); setLoading(false)
+      runAnimations(cached.pills, cached.taken)
+    } else {
+      setLoading(true)
+    }
+
+    const [pillRes, takenRes] = await Promise.all([
+      supabase.from('pills').select('*').eq('user_id', uid).order('scheduled_time', { ascending: true }),
+      supabase.from('pills_taken').select('pill_id').eq('user_id', uid).eq('date_taken', date),
+    ])
+    const pillsList = pillRes.data || []
+    const takenList = takenRes.data?.map((t: PillTaken) => t.pill_id) || []
+
+    cacheSet<MedCache>(key, { pills: pillsList, taken: takenList })
     setPills(pillsList)
     setTaken(takenList)
     setLoading(false)
-    runAnimations(pillsList, takenList)
+    const changed = !cached
+      || pillsList.length !== cached.pills.length
+      || pillsList.some((p, i) => p.id !== cached.pills[i]?.id)
+      || takenList.length !== cached.taken.length
+    if (changed) runAnimations(pillsList, takenList)
   }, [supabase, runAnimations])
 
   useEffect(() => {
@@ -84,27 +104,38 @@ export default function MedsPage() {
     if (!pillName.trim() || !pillTime || !userId) return
     const now = Date.now()
     const { data } = await supabase.from('pills').insert({ user_id: userId, name: pillName.trim(), scheduled_time: pillTime, updated_at: now, created_at: now }).select().single()
-    if (data) setPills(prev => [...prev, data].sort((a, b) => a.scheduled_time.localeCompare(b.scheduled_time)))
+    if (data) {
+      const next = [...pills, data].sort((a, b) => a.scheduled_time.localeCompare(b.scheduled_time))
+      setPills(next)
+      syncCache(next, taken)
+    }
     setPillName(''); setPillTime('')
   }
 
   const deletePill = async (id: string) => {
     await supabase.from('pills').delete().eq('id', id)
     await supabase.from('pills_taken').delete().eq('pill_id', id)
-    setPills(prev => prev.filter(p => p.id !== id))
-    setTaken(prev => prev.filter(t => t !== id))
+    const nextPills = pills.filter(p => p.id !== id)
+    const nextTaken = taken.filter(t => t !== id)
+    setPills(nextPills); setTaken(nextTaken)
+    syncCache(nextPills, nextTaken)
   }
 
   const toggleTaken = async (pillId: string) => {
     if (!userId || viewDate !== todayStr()) return
+    const nextTaken = taken.includes(pillId) ? taken.filter(t => t !== pillId) : [...taken, pillId]
+    setTaken(nextTaken)
+    syncCache(pills, nextTaken)
     if (taken.includes(pillId)) {
       await supabase.from('pills_taken').delete().eq('pill_id', pillId).eq('user_id', userId).eq('date_taken', viewDate)
-      setTaken(prev => prev.filter(t => t !== pillId))
     } else {
       const now = Date.now()
       await supabase.from('pills_taken').insert({ user_id: userId, pill_id: pillId, date_taken: viewDate, updated_at: now, created_at: now })
-      setTaken(prev => [...prev, pillId])
     }
+  }
+
+  const syncCache = (p: Pill[], t: string[]) => {
+    if (userId) cacheSet<MedCache>(`meds:${userId}:${viewDate}`, { pills: p, taken: t })
   }
 
   const prevDate = () => { const d = new Date(viewDate + 'T12:00'); d.setDate(d.getDate() - 1); setViewDate(d.toISOString().slice(0, 10)) }
@@ -114,69 +145,76 @@ export default function MedsPage() {
   const pillsDone = pills.filter(p => taken.includes(p.id)).length
   const allDone = pills.length > 0 && pillsDone === pills.length
 
-  const inp = { background: theme.c2, border: `1px solid ${theme.border}`, borderRadius: 10, padding: '10px 12px', color: theme.txt, fontSize: 14, outline: 'none' } as const
-  const card = { background: theme.c1, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 18, marginBottom: 14 } as const
+  const s = styles(theme)
+  const inp = s.input
 
-  if (loading) return <div style={{ padding: 24, color: theme.muted }}>Loading...</div>
+  if (loading) return <Loader t={theme} />
 
   return (
-    <div style={{ padding: '20px 16px', maxWidth: 480, margin: '0 auto' }}>
+    <div style={s.page}>
 
-      <div ref={headerRef} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, opacity: 0 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: theme.accent, marginBottom: 2 }}>Medications</h1>
-          <p style={{ fontSize: 12, color: theme.sub }}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
-        </div>
-        <button onClick={() => { setShowHistory(!showHistory); if (showHistory) setViewDate(todayStr()) }}
-          style={{ background: showHistory ? theme.accent + '22' : 'transparent', border: `1px solid ${showHistory ? theme.accent : theme.border}`, borderRadius: 9, padding: '6px 12px', fontSize: 12, color: showHistory ? theme.accent : theme.muted, cursor: 'pointer' }}>
-          {showHistory ? 'Back to Today' : '📅 History'}
-        </button>
+      <div ref={headerRef} style={{ opacity: 0 }}>
+        <PageHeader t={theme} eyebrow="Medications" title={isToday ? 'Today' : fmtDate(viewDate)}
+          right={
+            <button className="luma-ghost" onClick={() => { setShowHistory(!showHistory); if (showHistory) setViewDate(todayStr()) }}
+              style={{ ...s.ghostBtn, ...(showHistory ? { borderColor: theme.accent, color: theme.accent } : {}) }}>
+              <Icon name={showHistory ? 'arrowRight' : 'calendar'} size={14} />
+              {showHistory ? 'Today' : 'History'}
+            </button>
+          } />
       </div>
 
       {showHistory && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-          <button onClick={prevDate} style={{ background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: 9, padding: '7px 14px', fontSize: 13, color: theme.muted, cursor: 'pointer' }}>←</button>
-          <div style={{ flex: 1, textAlign: 'center', fontSize: 13, color: theme.txt, fontWeight: 500 }}>{isToday ? 'Today' : fmtDate(viewDate)}</div>
-          <button onClick={nextDate} disabled={isToday} style={{ background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: 9, padding: '7px 14px', fontSize: 13, color: isToday ? theme.border : theme.muted, cursor: isToday ? 'default' : 'pointer' }}>→</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <button className="luma-icon-btn" onClick={prevDate} style={s.iconBtn}><Icon name="chevronLeft" size={16} /></button>
+          <div style={{ flex: 1, textAlign: 'center', fontSize: 13, color: theme.txt, fontWeight: 500, fontFamily: sans }}>{isToday ? 'Today' : fmtDate(viewDate)}</div>
+          <button className="luma-icon-btn" onClick={nextDate} disabled={isToday} style={{ ...s.iconBtn, opacity: isToday ? 0.35 : 1, cursor: isToday ? 'default' : 'pointer' }}><Icon name="chevronRight" size={16} /></button>
         </div>
       )}
 
       {pills.length > 0 && (
-        <div ref={pillsCardRef} style={{ ...card, opacity: 0 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <div style={{ fontSize: 15, fontWeight: 600, color: theme.txt }}>
-              {allDone && isToday ? '✅ All taken!' : isToday ? "Today's Medications" : fmtDate(viewDate)}
+        <div ref={pillsCardRef} className="luma-card" style={{ ...s.card, opacity: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 20, paddingBottom: 20, borderBottom: `1px solid ${theme.border}` }}>
+            <Ring size={106} stroke={11} pct={pills.length ? Math.round(pillsDone / pills.length * 100) : 0} color={allDone ? theme.green : theme.accent} track={theme.c2}>
+              <span style={{ fontFamily: serif, fontSize: 26, color: theme.txt, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{pillsDone}<span style={{ color: theme.sub, fontSize: 18 }}>/{pills.length}</span></span>
+              <span style={{ ...s.label, fontSize: 9, marginTop: 4 }}>taken</span>
+            </Ring>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <CardLabel t={theme} style={{ marginBottom: 8 }}>{isToday ? 'Today' : fmtDate(viewDate)}</CardLabel>
+              <div style={{ fontFamily: serif, fontSize: 30, color: allDone ? theme.green : theme.txt, lineHeight: 1, letterSpacing: '-0.02em' }}>
+                {allDone ? 'All done' : `${pills.length - pillsDone} left`}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: allDone ? theme.green : theme.muted, marginTop: 8 }}>
+                {allDone ? <Icon name="check" size={14} stroke={2.2} /> : <Icon name="clock" size={13} stroke={1.8} />}
+                <span>{allDone ? 'Every dose taken today' : isToday ? 'Tap a dose to mark it taken' : 'Past schedule'}</span>
+              </div>
             </div>
-            <div style={{ fontSize: 13, color: theme.muted }}>
-              <span style={{ color: allDone ? theme.green : theme.txt, fontWeight: 600 }}>{pillsDone}</span>/{pills.length} taken
-            </div>
-          </div>
-          <div style={{ background: theme.c2, borderRadius: 6, height: 7, overflow: 'hidden', marginBottom: 16 }}>
-            <div ref={barRef} style={{ height: '100%', borderRadius: 6, width: '0%', background: allDone ? theme.green : theme.accent }} />
           </div>
           <div ref={listRef}>
             {pills.map((p, i) => {
               const isTaken = taken.includes(p.id)
               const due = isToday && isDue(p.scheduled_time) && !isTaken
               return (
-                <div key={p.id} className="pill-item" style={{ display: 'flex', alignItems: 'center', padding: '11px 0', borderBottom: i < pills.length - 1 ? `1px solid ${theme.border}` : 'none', gap: 12, opacity: 0 }}>
+                <div key={p.id} className="pill-item luma-row" style={{ display: 'flex', alignItems: 'center', padding: '12px 0', borderBottom: i < pills.length - 1 ? `1px solid ${theme.border}` : 'none', gap: 13, opacity: 0 }}>
                   <div onClick={() => toggleTaken(p.id)} style={{
-                    width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
+                    width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
                     cursor: isToday ? 'pointer' : 'default',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     border: isTaken ? 'none' : due ? `2px solid ${theme.accent}` : `2px solid ${theme.border}`,
-                    background: isTaken ? theme.green : 'transparent',
-                    boxShadow: due ? `0 0 0 3px ${theme.accent}33` : 'none',
+                    background: isTaken ? `linear-gradient(135deg, ${theme.green}, color-mix(in srgb, ${theme.green} 70%, ${theme.bg}))` : 'transparent',
+                    boxShadow: due ? `0 0 0 4px color-mix(in srgb, ${theme.accent} 22%, transparent)` : isTaken ? `0 4px 12px -4px ${theme.green}` : 'none',
                     transition: 'all .2s',
                   }}>
-                    {isTaken && <span style={{ color: theme.bg, fontSize: 13 }}>✓</span>}
+                    {isTaken && <span style={{ color: theme.bg, display: 'flex' }}><Icon name="check" size={15} stroke={2.6} /></span>}
                   </div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, color: isTaken ? theme.sub : theme.txt, textDecoration: isTaken ? 'line-through' : 'none' }}>{p.name}</div>
-                    <div style={{ fontSize: 11, color: theme.muted, marginTop: 1 }}>{p.scheduled_time}</div>
+                    <div style={{ fontSize: 14.5, color: isTaken ? theme.sub : theme.txt, textDecoration: isTaken ? 'line-through' : 'none', fontFamily: sans }}>{p.name}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: theme.muted, marginTop: 2 }}>
+                      <Icon name="clock" size={11} stroke={1.7} />{p.scheduled_time}
+                    </div>
                   </div>
-                  {due && <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, fontWeight: 600, background: theme.accent + '22', color: theme.accent, flexShrink: 0 }}>Due Now</span>}
-                  {isToday && <button onClick={() => deletePill(p.id)} style={{ background: 'transparent', border: `1px solid ${theme.border}`, color: theme.sub, borderRadius: 7, padding: '3px 8px', fontSize: 11, cursor: 'pointer' }}>✕</button>}
+                  {due && <span style={s.chip(theme.accent)}>Due Now</span>}
+                  {isToday && <button className="luma-del luma-icon-btn" onClick={() => deletePill(p.id)} style={{ ...s.iconBtn, width: 24, height: 24 }}><Icon name="x" size={13} /></button>}
                 </div>
               )
             })}
@@ -185,22 +223,19 @@ export default function MedsPage() {
       )}
 
       {isToday && (
-        <div ref={formRef} style={{ ...card, opacity: 0 }}>
-          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.8px', color: theme.sub, marginBottom: 10 }}>Add Medication</div>
-          <input value={pillName} onChange={e => setPillName(e.target.value)} placeholder="Medication name" style={{ ...inp, width: '100%', marginBottom: 10, boxSizing: 'border-box' }} />
+        <div ref={formRef} className="luma-card" style={{ ...s.card, opacity: 0 }}>
+          <CardLabel t={theme}>Add Medication</CardLabel>
+          <input className="luma-input" value={pillName} onChange={e => setPillName(e.target.value)} placeholder="Medication name" style={{ ...inp, width: '100%', marginBottom: 10, boxSizing: 'border-box' }} />
           <div style={{ display: 'flex', gap: 8 }}>
-            <input value={pillTime} onChange={e => setPillTime(e.target.value)} type="time" style={{ ...inp, flex: 1 }} />
-            <button onClick={addPill} style={{ background: theme.accent, border: 'none', borderRadius: 10, padding: '10px 20px', fontSize: 14, fontWeight: 700, cursor: 'pointer', color: theme.bg }}>Add</button>
+            <input className="luma-input" value={pillTime} onChange={e => setPillTime(e.target.value)} type="time" style={{ ...inp, flex: 1 }} />
+            <button className="luma-btn" onClick={addPill} style={{ ...s.primaryBtn, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="plus" size={16} stroke={2} />Add</button>
           </div>
-          <div style={{ fontSize: 11, color: theme.sub, marginTop: 8 }}>Medications with &quot;Due Now&quot; appear 30 minutes before scheduled time.</div>
+          <div style={{ fontSize: 11, color: theme.sub, marginTop: 10, fontFamily: sans, lineHeight: 1.5 }}>Medications marked &quot;Due Now&quot; appear 30 minutes before their scheduled time.</div>
         </div>
       )}
 
       {pills.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '36px 0', color: theme.sub }}>
-          <div style={{ fontSize: 36, marginBottom: 10 }}>💊</div>
-          <div style={{ fontSize: 13 }}>No medications added yet.</div>
-        </div>
+        <EmptyState t={theme} icon="meds" text="No medications added yet." />
       )}
     </div>
   )

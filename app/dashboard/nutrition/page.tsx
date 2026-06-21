@@ -4,8 +4,12 @@ import { createClient } from '@/utils/supabase/client'
 import { useEffect, useCallback, useState, useRef } from 'react'
 import { useTheme } from '../../ThemeContext'
 import { animate, stagger } from 'animejs'
+import { styles, PageHeader, CardLabel, Loader, EmptyState, WeekChart, Ring, lastNDays, Icon, serif, sans } from '../ui'
+import { cacheGet, cacheSet } from '../cache'
 
 type FoodLog = { id: string; name: string; calories: number; date: string; time: string }
+type Day = { date: string; value: number }
+type Cache = { foods: FoodLog[]; goal: number; week: Day[] }
 
 const todayStr = () => new Date().toISOString().slice(0, 10)
 const timeNow = () => new Date().toTimeString().slice(0, 5)
@@ -26,6 +30,7 @@ export default function NutritionPage() {
   const [viewDate, setViewDate] = useState(todayStr())
   const [showHistory, setShowHistory] = useState(false)
   const [dispCals, setDispCals] = useState(0)
+  const [week, setWeek] = useState<Day[]>([])
 
   const headerRef = useRef<HTMLDivElement>(null)
   const cardRef = useRef<HTMLDivElement>(null)
@@ -57,16 +62,38 @@ export default function NutritionPage() {
   }, [])
 
   const loadData = useCallback(async (date: string, uid: string) => {
-    setLoading(true)
-    const { data: settings } = await supabase.from('user_settings').select('calorie_goal').eq('user_id', uid).maybeSingle()
-    if (settings) setCalGoal(settings.calorie_goal)
-    const goal = settings?.calorie_goal || 2000
-    const { data: logs } = await supabase.from('food_logs').select('*').eq('user_id', uid).eq('date', date).order('created_at', { ascending: true })
-    const items = logs || []
-    setFoods(items)
-    setLoading(false)
+    const key = `nutrition:${uid}:${date}`
+    const cached = cacheGet<Cache>(key)
+    if (cached) {
+      setCalGoal(cached.goal); setFoods(cached.foods); setWeek(cached.week); setLoading(false)
+      runAnimations(cached.foods.reduce((s, f) => s + f.calories, 0), cached.goal, cached.foods)
+    } else {
+      setLoading(true)
+    }
+
+    const days = lastNDays(7, date)
+    const [settingsRes, logsRes, weekRes] = await Promise.all([
+      supabase.from('user_settings').select('calorie_goal').eq('user_id', uid).maybeSingle(),
+      supabase.from('food_logs').select('*').eq('user_id', uid).eq('date', date).order('created_at', { ascending: true }),
+      supabase.from('food_logs').select('calories, date').eq('user_id', uid).gte('date', days[0]).lte('date', days[6]),
+    ])
+    const goal = settingsRes.data?.calorie_goal || 2000
+    const items = logsRes.data || []
+    const byDate: Record<string, number> = {}
+    weekRes.data?.forEach((r: { calories: number; date: string }) => { byDate[r.date] = (byDate[r.date] || 0) + r.calories })
+    const weekData: Day[] = days.map(d => ({ date: d, value: byDate[d] || 0 }))
+
+    cacheSet<Cache>(key, { foods: items, goal, week: weekData })
+    setCalGoal(goal); setFoods(items); setWeek(weekData)
     const cals = items.reduce((s, f) => s + f.calories, 0)
-    runAnimations(cals, goal, items)
+    const changed = !cached || items.length !== cached.foods.length || items.some((f, i) => f.id !== cached.foods[i]?.id)
+    setLoading(false)
+    if (changed) {
+      runAnimations(cals, goal, items)
+    } else {
+      setDispCals(cals)
+      if (barRef.current) animate(barRef.current, { width: `${Math.min(100, Math.round(cals / goal * 100))}%`, duration: 450, ease: 'outExpo' })
+    }
   }, [supabase, runAnimations])
 
   useEffect(() => {
@@ -87,10 +114,12 @@ export default function NutritionPage() {
     if (data) {
       const updated = [...foods, data]
       setFoods(updated)
-      setDispCals(updated.reduce((s, f) => s + f.calories, 0))
+      const total = updated.reduce((s, f) => s + f.calories, 0)
+      setDispCals(total)
+      syncWeekToday(updated, total)
       if (barRef.current) {
-        const pct = Math.min(100, Math.round(updated.reduce((s, f) => s + f.calories, 0) / calGoal * 100))
-        animate(barRef.current, { width: [`${Math.min(100, Math.round((updated.reduce((s,f)=>s+f.calories,0)-data.calories)/calGoal*100))}%`, `${pct}%`], duration: 600, ease: 'outExpo' })
+        const pct = Math.min(100, Math.round(total / calGoal * 100))
+        animate(barRef.current, { width: [`${Math.min(100, Math.round((total - data.calories) / calGoal * 100))}%`, `${pct}%`], duration: 600, ease: 'outExpo' })
       }
     }
     setName(''); setCalories('')
@@ -101,7 +130,16 @@ export default function NutritionPage() {
     await supabase.from('food_logs').delete().eq('id', id)
     const updated = foods.filter(f => f.id !== id)
     setFoods(updated)
-    setDispCals(updated.reduce((s, f) => s + f.calories, 0))
+    const total = updated.reduce((s, f) => s + f.calories, 0)
+    setDispCals(total)
+    syncWeekToday(updated, total)
+  }
+
+  // Keep the week chart's current-day bar + cache in step with optimistic edits.
+  const syncWeekToday = (items: FoodLog[], total: number) => {
+    const next = week.map(d => d.date === viewDate ? { ...d, value: total } : d)
+    setWeek(next)
+    if (userId) cacheSet<Cache>(`nutrition:${userId}:${viewDate}`, { foods: items, goal: calGoal, week: next })
   }
 
   const saveGoal = async () => {
@@ -121,102 +159,109 @@ export default function NutritionPage() {
   const pct = Math.min(100, Math.round(totalCals / calGoal * 100))
   const over = calLeft < 0
 
-  const inp = { background: theme.c2, border: `1px solid ${theme.border}`, borderRadius: 10, padding: '10px 12px', color: theme.txt, fontSize: 14, outline: 'none' } as const
-  const card = { background: theme.c1, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 18, marginBottom: 14 } as const
+  const s = styles(theme)
+  const inp = s.input
 
-  if (loading) return <div style={{ padding: 24, color: theme.muted }}>Loading...</div>
+  if (loading) return <Loader t={theme} />
 
   return (
-    <div style={{ padding: '20px 16px', maxWidth: 480, margin: '0 auto' }}>
+    <div style={s.page}>
 
-      <div ref={headerRef} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, opacity: 0 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: theme.accent, marginBottom: 2 }}>Nutrition</h1>
-          <p style={{ fontSize: 12, color: theme.sub }}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
-        </div>
-        <button onClick={() => { setShowHistory(!showHistory); if (showHistory) setViewDate(todayStr()) }}
-          style={{ background: showHistory ? theme.accent + '22' : 'transparent', border: `1px solid ${showHistory ? theme.accent : theme.border}`, borderRadius: 9, padding: '6px 12px', fontSize: 12, color: showHistory ? theme.accent : theme.muted, cursor: 'pointer' }}>
-          {showHistory ? 'Back to Today' : '📅 History'}
-        </button>
+      <div ref={headerRef} style={{ opacity: 0 }}>
+        <PageHeader t={theme} eyebrow="Nutrition" title={isToday ? 'Today' : fmtDate(viewDate)}
+          right={
+            <button className="luma-ghost" onClick={() => { setShowHistory(!showHistory); if (showHistory) setViewDate(todayStr()) }}
+              style={{ ...s.ghostBtn, ...(showHistory ? { borderColor: theme.accent, color: theme.accent } : {}) }}>
+              <Icon name={showHistory ? 'arrowRight' : 'calendar'} size={14} />
+              {showHistory ? 'Today' : 'History'}
+            </button>
+          } />
       </div>
 
       {showHistory && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-          <button onClick={prevDate} style={{ background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: 9, padding: '7px 14px', fontSize: 13, color: theme.muted, cursor: 'pointer' }}>←</button>
-          <div style={{ flex: 1, textAlign: 'center', fontSize: 13, color: theme.txt, fontWeight: 500 }}>{isToday ? 'Today' : fmtDate(viewDate)}</div>
-          <button onClick={nextDate} disabled={isToday} style={{ background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: 9, padding: '7px 14px', fontSize: 13, color: isToday ? theme.border : theme.muted, cursor: isToday ? 'default' : 'pointer' }}>→</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <button className="luma-icon-btn" onClick={prevDate} style={s.iconBtn}><Icon name="chevronLeft" size={16} /></button>
+          <div style={{ flex: 1, textAlign: 'center', fontSize: 13, color: theme.txt, fontWeight: 500, fontFamily: sans }}>{isToday ? 'Today' : fmtDate(viewDate)}</div>
+          <button className="luma-icon-btn" onClick={nextDate} disabled={isToday} style={{ ...s.iconBtn, opacity: isToday ? 0.35 : 1, cursor: isToday ? 'default' : 'pointer' }}><Icon name="chevronRight" size={16} /></button>
         </div>
       )}
 
-      <div ref={cardRef} style={{ ...card, opacity: 0 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: theme.txt, marginBottom: 4 }}>{isToday ? "Today's Calories" : fmtDate(viewDate)}</div>
-            {!editingGoal && isToday ? (
-              <div style={{ fontSize: 12, color: theme.muted }}>
-                Goal: <span style={{ color: theme.accent }}>{calGoal.toLocaleString()} kcal</span>
-                <span onClick={() => { setTmpGoal(String(calGoal)); setEditingGoal(true) }} style={{ cursor: 'pointer', color: theme.sub, marginLeft: 8, fontSize: 11 }}>✎ edit</span>
-              </div>
-            ) : editingGoal ? (
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4 }}>
-                <input value={tmpGoal} onChange={e => setTmpGoal(e.target.value)} type="number" style={{ ...inp, width: 80, padding: '4px 8px', fontSize: 12 }} />
-                <button onClick={saveGoal} style={{ background: theme.accent, border: 'none', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: theme.bg }}>Save</button>
-                <button onClick={() => setEditingGoal(false)} style={{ background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: 8, padding: '4px 8px', fontSize: 12, color: theme.muted, cursor: 'pointer' }}>✕</button>
-              </div>
-            ) : (
-              <div style={{ fontSize: 12, color: theme.muted }}>Goal: <span style={{ color: theme.accent }}>{calGoal.toLocaleString()} kcal</span></div>
-            )}
+      <div ref={cardRef} className="luma-card" style={{ ...s.card, opacity: 0, display: 'flex', alignItems: 'center', gap: 22 }}>
+        <Ring size={128} stroke={12} pct={pct} color={over ? theme.red : pct > 80 ? theme.accent : theme.green} track={theme.c2}>
+          <span style={{ fontFamily: serif, fontSize: 32, color: theme.txt, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{dispCals.toLocaleString()}</span>
+          <span style={{ ...s.label, fontSize: 9, marginTop: 5 }}>kcal eaten</span>
+        </Ring>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <CardLabel t={theme} style={{ marginBottom: 10 }}>{isToday ? 'Calories' : fmtDate(viewDate)}</CardLabel>
+          <div style={{ fontFamily: serif, fontSize: 38, color: over ? theme.red : theme.green, lineHeight: 1, letterSpacing: '-0.02em' }}>
+            {over ? `+${Math.abs(calLeft).toLocaleString()}` : calLeft.toLocaleString()}
           </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 32, fontWeight: 700, color: over ? theme.red : theme.accent, lineHeight: 1 }}>{dispCals.toLocaleString()}</div>
-            <div style={{ fontSize: 11, color: theme.muted, marginTop: 2 }}>kcal eaten</div>
-          </div>
-        </div>
-        <div style={{ background: theme.c2, borderRadius: 6, height: 7, overflow: 'hidden', marginBottom: 8 }}>
-          <div ref={barRef} style={{ height: '100%', borderRadius: 6, width: '0%', background: pct > 100 ? theme.red : pct > 80 ? theme.accent : theme.green }} />
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: theme.muted }}>
-          <span>{pct}% of goal</span>
-          <span style={{ color: over ? theme.red : theme.green, fontWeight: 500 }}>
-            {over ? `${Math.abs(calLeft).toLocaleString()} kcal over` : `${calLeft.toLocaleString()} kcal left`}
-          </span>
+          <div style={{ fontSize: 12.5, color: theme.muted, marginTop: 6 }}>{over ? 'kcal over goal' : 'kcal remaining'}</div>
+
+          {isToday && (
+            <div style={{ marginTop: 12 }}>
+              {editingGoal ? (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input className="luma-input" value={tmpGoal} onChange={e => setTmpGoal(e.target.value)} type="number" style={{ ...inp, width: 78, padding: '7px 9px', fontSize: 13 }} />
+                  <button className="luma-btn" onClick={saveGoal} style={{ ...s.primaryBtn, padding: '7px 12px', fontSize: 12 }}>Save</button>
+                  <button className="luma-icon-btn" onClick={() => setEditingGoal(false)} style={s.iconBtn}><Icon name="x" size={14} /></button>
+                </div>
+              ) : (
+                <div className="luma-link" onClick={() => { setTmpGoal(String(calGoal)); setEditingGoal(true) }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: theme.muted, fontFamily: sans }}>
+                  <span style={{ ...s.label }}>Goal</span>
+                  <span style={{ color: theme.accent, fontWeight: 600 }}>{calGoal.toLocaleString()}</span>
+                  <Icon name="edit" size={12} />
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
+      {week.length > 0 && (
+        <div className="luma-card" style={s.card}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 18 }}>
+            <CardLabel t={theme} style={{ marginBottom: 0 }}>This Week</CardLabel>
+            <span style={{ fontSize: 11.5, color: theme.muted, fontFamily: sans }}>
+              avg <strong style={{ color: theme.txt, fontFamily: serif, fontSize: 15 }}>{Math.round(week.reduce((a, d) => a + d.value, 0) / 7).toLocaleString()}</strong> kcal
+            </span>
+          </div>
+          <WeekChart t={theme} color={theme.green} goal={calGoal} data={week.map(d => d.date === viewDate ? { ...d, value: totalCals } : d)} />
+        </div>
+      )}
+
       {isToday && (
-        <div ref={formRef} style={{ ...card, opacity: 0 }}>
-          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.8px', color: theme.sub, marginBottom: 10 }}>Log Meal</div>
-          <input value={name} onChange={e => setName(e.target.value)} placeholder="Food or meal name" onKeyDown={e => e.key === 'Enter' && addFood()}
+        <div ref={formRef} className="luma-card" style={{ ...s.card, opacity: 0 }}>
+          <CardLabel t={theme}>Log Meal</CardLabel>
+          <input className="luma-input" value={name} onChange={e => setName(e.target.value)} placeholder="Food or meal name" onKeyDown={e => e.key === 'Enter' && addFood()}
             style={{ ...inp, width: '100%', marginBottom: 10, boxSizing: 'border-box' }} />
           <div style={{ display: 'flex', gap: 8 }}>
-            <input value={calories} onChange={e => setCalories(e.target.value)} type="number" placeholder="Calories (kcal)" onKeyDown={e => e.key === 'Enter' && addFood()}
+            <input className="luma-input" value={calories} onChange={e => setCalories(e.target.value)} type="number" placeholder="Calories (kcal)" onKeyDown={e => e.key === 'Enter' && addFood()}
               style={{ ...inp, flex: 1 }} />
-            <button onClick={addFood} style={{ background: theme.accent, border: 'none', borderRadius: 10, padding: '10px 20px', fontSize: 14, fontWeight: 700, cursor: 'pointer', color: theme.bg }}>Add</button>
+            <button className="luma-btn" onClick={addFood} style={{ ...s.primaryBtn, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="plus" size={16} stroke={2} />Add</button>
           </div>
         </div>
       )}
 
       {foods.length > 0 ? (
-        <div ref={listRef} style={card}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: theme.txt, marginBottom: 14 }}>{isToday ? "Today's Log" : 'Meals'}</div>
+        <div ref={listRef} className="luma-card" style={s.card}>
+          <CardLabel t={theme}>{isToday ? "Today's Log" : 'Meals'}</CardLabel>
           {foods.map((f, i) => (
-            <div key={f.id} className="food-item" style={{ display: 'flex', alignItems: 'center', padding: '9px 0', borderBottom: i < foods.length - 1 ? `1px solid ${theme.border}` : 'none', gap: 8, opacity: 0 }}>
-              <div style={{ flex: 1, fontSize: 14, color: theme.txt, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</div>
-              <div style={{ fontSize: 13, color: theme.muted, flexShrink: 0 }}>{f.calories} kcal</div>
-              <div style={{ fontSize: 11, color: theme.sub, flexShrink: 0 }}>{f.time}</div>
-              {isToday && <button onClick={() => deleteFood(f.id)} style={{ background: 'transparent', border: `1px solid ${theme.border}`, color: theme.sub, borderRadius: 7, padding: '3px 8px', fontSize: 11, cursor: 'pointer' }}>✕</button>}
+            <div key={f.id} className="food-item luma-row" style={{ display: 'flex', alignItems: 'center', padding: '11px 0', borderBottom: i < foods.length - 1 ? `1px solid ${theme.border}` : 'none', gap: 10, opacity: 0 }}>
+              <div style={{ flex: 1, fontSize: 14, color: theme.txt, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: sans }}>{f.name}</div>
+              <div style={{ fontFamily: serif, fontSize: 17, color: theme.muted, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{f.calories}</div>
+              <div style={{ fontSize: 11, color: theme.sub, flexShrink: 0, fontFamily: sans, width: 38 }}>{f.time}</div>
+              {isToday && <button className="luma-del luma-icon-btn" onClick={() => deleteFood(f.id)} style={{ ...s.iconBtn, width: 24, height: 24 }}><Icon name="x" size={13} /></button>}
             </div>
           ))}
-          <div style={{ paddingTop: 10, fontSize: 13, color: theme.muted, borderTop: `1px solid ${theme.border}`, marginTop: 4, display: 'flex', justifyContent: 'space-between' }}>
+          <div style={{ paddingTop: 12, fontSize: 13, color: theme.muted, borderTop: `1px solid ${theme.border}`, marginTop: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontFamily: sans }}>
             <span>{foods.length} {foods.length === 1 ? 'entry' : 'entries'}</span>
-            <span>Total: <strong style={{ color: theme.txt }}>{totalCals.toLocaleString()} kcal</strong></span>
+            <span>Total <strong style={{ color: theme.txt, fontFamily: serif, fontSize: 17, marginLeft: 4 }}>{totalCals.toLocaleString()}</strong> kcal</span>
           </div>
         </div>
       ) : (
-        <div style={{ textAlign: 'center', padding: '36px 0', color: theme.sub }}>
-          <div style={{ fontSize: 36, marginBottom: 10 }}>🍽️</div>
-          <div style={{ fontSize: 13 }}>{isToday ? 'No meals logged yet today.' : 'No meals logged on this day.'}</div>
-        </div>
+        <EmptyState t={theme} icon="utensils" text={isToday ? 'No meals logged yet today.' : 'No meals logged on this day.'} />
       )}
     </div>
   )
