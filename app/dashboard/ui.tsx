@@ -138,6 +138,9 @@ const ICONS: Record<string, ReactNode> = {
   clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7.5V12l3 2" /></>,
   trash: <><path d="M4 7h16" /><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /><path d="M6.5 7l.9 12a1 1 0 0 0 1 .95h7.2a1 1 0 0 0 1-.95L17.5 7" /></>,
   sparkle: <path d="M12 3l1.8 5.7L19.5 11l-5.7 1.8L12 18l-1.8-5.2L4.5 11l5.7-2.3Z" />,
+  bell: <><path d="M18 8.5a6 6 0 1 0-12 0c0 6-2.4 7-2.4 7h16.8S18 14.5 18 8.5Z" /><path d="M10 20a2 2 0 0 0 4 0" /></>,
+  bellOff: <><path d="M8.7 4.2A6 6 0 0 1 18 8.5c0 2.6.5 4.3 1 5.4M5.4 9.9C5.7 13.6 4 15.5 4 15.5h12M10 20a2 2 0 0 0 4 0" /><path d="M3 3l18 18" /></>,
+  trend: <><path d="M3 17l6-6 4 4 7-7" /><path d="M17 7h4v4" /></>,
   utensils: <><path d="M6 3v8a2 2 0 0 0 4 0V3" /><path d="M8 11v10" /><path d="M16 3c-1.5 0-2.5 2-2.5 5s1 4 2.5 4v9" /></>,
 }
 

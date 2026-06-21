@@ -16,13 +16,6 @@ const todayStr = () => new Date().toISOString().slice(0, 10)
 const timeNow = () => new Date().toTimeString().slice(0, 5)
 const fmtDate = (d: string) => new Date(d + 'T12:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
 
-const isDue = (t: string) => {
-  const [sh, sm] = t.split(':').map(Number)
-  const [nh, nm] = timeNow().split(':').map(Number)
-  const diff = (sh * 60 + sm) - (nh * 60 + nm)
-  return diff >= -10 && diff <= 30
-}
-
 export default function MedsPage() {
   const supabase = createClient()
   const { theme } = useTheme()
@@ -35,6 +28,8 @@ export default function MedsPage() {
   const [pillTime, setPillTime] = useState('')
   const [viewDate, setViewDate] = useState(todayStr())
   const [showHistory, setShowHistory] = useState(false)
+  const [notify, setNotify] = useState(false)
+  const timers = useRef<number[]>([])
 
   const headerRef = useRef<HTMLDivElement>(null)
   const pillsCardRef = useRef<HTMLDivElement>(null)
@@ -138,12 +133,66 @@ export default function MedsPage() {
     if (userId) cacheSet<MedCache>(`meds:${userId}:${viewDate}`, { pills: p, taken: t })
   }
 
+  // ---- Reminders (best-effort, fire while the app is open) ----
+  useEffect(() => { setNotify(localStorage.getItem('luma-med-notify') === '1') }, [])
+
+  const scheduleNotifs = useCallback(() => {
+    timers.current.forEach(clearTimeout)
+    timers.current = []
+    if (!notify || typeof Notification === 'undefined' || Notification.permission !== 'granted') return
+    if (viewDate !== todayStr()) return
+    const [nh, nm] = timeNow().split(':').map(Number)
+    const nowMin = nh * 60 + nm
+    pills.forEach(p => {
+      if (taken.includes(p.id)) return
+      const [h, m] = p.scheduled_time.split(':').map(Number)
+      const delayMin = (h * 60 + m) - nowMin
+      if (delayMin > 0 && delayMin <= 16 * 60) {
+        const id = window.setTimeout(() => {
+          new Notification('Time for your medication', { body: `${p.name} · ${p.scheduled_time}` })
+        }, delayMin * 60 * 1000)
+        timers.current.push(id)
+      }
+    })
+  }, [notify, pills, taken, viewDate])
+
+  useEffect(() => {
+    scheduleNotifs()
+    return () => { timers.current.forEach(clearTimeout); timers.current = [] }
+  }, [scheduleNotifs])
+
+  const toggleNotify = async () => {
+    if (notify) {
+      setNotify(false); localStorage.setItem('luma-med-notify', '0')
+      return
+    }
+    if (typeof Notification === 'undefined') { alert('This browser does not support notifications.'); return }
+    const perm = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission()
+    if (perm !== 'granted') return
+    setNotify(true); localStorage.setItem('luma-med-notify', '1')
+    new Notification('Reminders on', { body: 'Luma will nudge you at dose times while it’s open.' })
+  }
+
   const prevDate = () => { const d = new Date(viewDate + 'T12:00'); d.setDate(d.getDate() - 1); setViewDate(d.toISOString().slice(0, 10)) }
   const nextDate = () => { const d = new Date(viewDate + 'T12:00'); d.setDate(d.getDate() + 1); const nd = d.toISOString().slice(0, 10); if (nd <= todayStr()) setViewDate(nd) }
 
   const isToday = viewDate === todayStr()
   const pillsDone = pills.filter(p => taken.includes(p.id)).length
   const allDone = pills.length > 0 && pillsDone === pills.length
+
+  type DoseState = 'taken' | 'due' | 'overdue' | 'upcoming' | 'past'
+  const doseState = (p: Pill): DoseState => {
+    if (taken.includes(p.id)) return 'taken'
+    if (!isToday) return 'past'
+    const [h, m] = p.scheduled_time.split(':').map(Number)
+    const [nh, nm] = timeNow().split(':').map(Number)
+    const diff = (h * 60 + m) - (nh * 60 + nm)
+    if (diff >= -10 && diff <= 30) return 'due'
+    if (diff < -10) return 'overdue'
+    return 'upcoming'
+  }
+  const overdueCount = pills.filter(p => doseState(p) === 'overdue').length
+  const nextId = pills.find(p => doseState(p) === 'upcoming')?.id
 
   const s = styles(theme)
   const inp = s.input
@@ -156,11 +205,19 @@ export default function MedsPage() {
       <div ref={headerRef} style={{ opacity: 0 }}>
         <PageHeader t={theme} eyebrow="Medications" title={isToday ? 'Today' : fmtDate(viewDate)}
           right={
-            <button className="luma-ghost" onClick={() => { setShowHistory(!showHistory); if (showHistory) setViewDate(todayStr()) }}
-              style={{ ...s.ghostBtn, ...(showHistory ? { borderColor: theme.accent, color: theme.accent } : {}) }}>
-              <Icon name={showHistory ? 'arrowRight' : 'calendar'} size={14} />
-              {showHistory ? 'Today' : 'History'}
-            </button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {isToday && pills.length > 0 && (
+                <button className="luma-ghost" onClick={toggleNotify} aria-label="Toggle reminders"
+                  style={{ ...s.ghostBtn, padding: '8px 11px', ...(notify ? { borderColor: theme.accent, color: theme.accent } : {}) }}>
+                  <Icon name={notify ? 'bell' : 'bellOff'} size={15} />
+                </button>
+              )}
+              <button className="luma-ghost" onClick={() => { setShowHistory(!showHistory); if (showHistory) setViewDate(todayStr()) }}
+                style={{ ...s.ghostBtn, ...(showHistory ? { borderColor: theme.accent, color: theme.accent } : {}) }}>
+                <Icon name={showHistory ? 'arrowRight' : 'calendar'} size={14} />
+                {showHistory ? 'Today' : 'History'}
+              </button>
+            </div>
           } />
       </div>
 
@@ -175,45 +232,55 @@ export default function MedsPage() {
       {pills.length > 0 && (
         <div ref={pillsCardRef} className="luma-card" style={{ ...s.card, opacity: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 20, paddingBottom: 20, borderBottom: `1px solid ${theme.border}` }}>
-            <Ring size={106} stroke={11} pct={pills.length ? Math.round(pillsDone / pills.length * 100) : 0} color={allDone ? theme.green : theme.accent} track={theme.c2}>
+            <Ring size={106} stroke={11} pct={pills.length ? Math.round(pillsDone / pills.length * 100) : 0} color={allDone ? theme.green : overdueCount > 0 ? theme.red : theme.accent} track={theme.c2}>
               <span style={{ fontFamily: serif, fontSize: 26, color: theme.txt, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{pillsDone}<span style={{ color: theme.sub, fontSize: 18 }}>/{pills.length}</span></span>
               <span style={{ ...s.label, fontSize: 9, marginTop: 4 }}>taken</span>
             </Ring>
             <div style={{ flex: 1, minWidth: 0 }}>
               <CardLabel t={theme} style={{ marginBottom: 8 }}>{isToday ? 'Today' : fmtDate(viewDate)}</CardLabel>
-              <div style={{ fontFamily: serif, fontSize: 30, color: allDone ? theme.green : theme.txt, lineHeight: 1, letterSpacing: '-0.02em' }}>
-                {allDone ? 'All done' : `${pills.length - pillsDone} left`}
+              <div style={{ fontFamily: serif, fontSize: 30, color: allDone ? theme.green : overdueCount > 0 ? theme.red : theme.txt, lineHeight: 1, letterSpacing: '-0.02em' }}>
+                {allDone ? 'All done' : overdueCount > 0 ? `${overdueCount} overdue` : `${pills.length - pillsDone} left`}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: allDone ? theme.green : theme.muted, marginTop: 8 }}>
-                {allDone ? <Icon name="check" size={14} stroke={2.2} /> : <Icon name="clock" size={13} stroke={1.8} />}
-                <span>{allDone ? 'Every dose taken today' : isToday ? 'Tap a dose to mark it taken' : 'Past schedule'}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: allDone ? theme.green : overdueCount > 0 ? theme.red : theme.muted, marginTop: 8 }}>
+                {allDone ? <Icon name="check" size={14} stroke={2.2} /> : <Icon name={notify && isToday ? 'bell' : 'clock'} size={13} stroke={1.8} />}
+                <span>
+                  {allDone ? 'Every dose taken today'
+                    : overdueCount > 0 ? `${overdueCount} dose${overdueCount > 1 ? 's' : ''} past due`
+                    : !isToday ? 'Past schedule'
+                    : notify ? 'Reminders on while Luma is open'
+                    : 'Tap a dose to mark it taken'}
+                </span>
               </div>
             </div>
           </div>
           <div ref={listRef}>
             {pills.map((p, i) => {
-              const isTaken = taken.includes(p.id)
-              const due = isToday && isDue(p.scheduled_time) && !isTaken
+              const st = doseState(p)
+              const isTaken = st === 'taken'
+              const ringColor = st === 'overdue' ? theme.red : st === 'due' ? theme.accent : theme.border
+              const active = st === 'due' || st === 'overdue'
               return (
                 <div key={p.id} className="pill-item luma-row" style={{ display: 'flex', alignItems: 'center', padding: '12px 0', borderBottom: i < pills.length - 1 ? `1px solid ${theme.border}` : 'none', gap: 13, opacity: 0 }}>
                   <div onClick={() => toggleTaken(p.id)} style={{
                     width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
                     cursor: isToday ? 'pointer' : 'default',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    border: isTaken ? 'none' : due ? `2px solid ${theme.accent}` : `2px solid ${theme.border}`,
+                    border: isTaken ? 'none' : `2px solid ${ringColor}`,
                     background: isTaken ? `linear-gradient(135deg, ${theme.green}, color-mix(in srgb, ${theme.green} 70%, ${theme.bg}))` : 'transparent',
-                    boxShadow: due ? `0 0 0 4px color-mix(in srgb, ${theme.accent} 22%, transparent)` : isTaken ? `0 4px 12px -4px ${theme.green}` : 'none',
+                    boxShadow: active ? `0 0 0 4px color-mix(in srgb, ${ringColor} 22%, transparent)` : isTaken ? `0 4px 12px -4px ${theme.green}` : 'none',
                     transition: 'all .2s',
                   }}>
                     {isTaken && <span style={{ color: theme.bg, display: 'flex' }}><Icon name="check" size={15} stroke={2.6} /></span>}
                   </div>
-                  <div style={{ flex: 1 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14.5, color: isTaken ? theme.sub : theme.txt, textDecoration: isTaken ? 'line-through' : 'none', fontFamily: sans }}>{p.name}</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: theme.muted, marginTop: 2 }}>
                       <Icon name="clock" size={11} stroke={1.7} />{p.scheduled_time}
                     </div>
                   </div>
-                  {due && <span style={s.chip(theme.accent)}>Due Now</span>}
+                  {st === 'due' && <span style={s.chip(theme.accent)}>Due now</span>}
+                  {st === 'overdue' && <span style={s.chip(theme.red)}>Overdue</span>}
+                  {st === 'upcoming' && p.id === nextId && <span style={{ ...s.chip(theme.blue), background: 'transparent' }}>Next</span>}
                   {isToday && <button className="luma-del luma-icon-btn" onClick={() => deletePill(p.id)} style={{ ...s.iconBtn, width: 24, height: 24 }}><Icon name="x" size={13} /></button>}
                 </div>
               )
@@ -230,7 +297,9 @@ export default function MedsPage() {
             <input className="luma-input" value={pillTime} onChange={e => setPillTime(e.target.value)} type="time" style={{ ...inp, flex: 1 }} />
             <button className="luma-btn" onClick={addPill} style={{ ...s.primaryBtn, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="plus" size={16} stroke={2} />Add</button>
           </div>
-          <div style={{ fontSize: 11, color: theme.sub, marginTop: 10, fontFamily: sans, lineHeight: 1.5 }}>Medications marked &quot;Due Now&quot; appear 30 minutes before their scheduled time.</div>
+          <div style={{ fontSize: 11, color: theme.sub, marginTop: 10, fontFamily: sans, lineHeight: 1.5 }}>
+            Tap the <Icon name="bell" size={11} style={{ display: 'inline', verticalAlign: '-1px' }} /> to get nudged at dose times while Luma is open. Doses turn <span style={{ color: theme.accent }}>Due now</span> within 30 min and <span style={{ color: theme.red }}>Overdue</span> after.
+          </div>
         </div>
       )}
 
