@@ -38,6 +38,14 @@ export const GLOBAL_CSS = `
   0%, 100% { opacity: .55; transform: scale(1); }
   50%      { opacity: 1;   transform: scale(1.04); }
 }
+@keyframes lumaAurora1 {
+  0%, 100% { transform: translate(-6%, -4%) scale(1); }
+  50%      { transform: translate(9%, 11%) scale(1.18); }
+}
+@keyframes lumaAurora2 {
+  0%, 100% { transform: translate(9%, 7%) scale(1.12); }
+  50%      { transform: translate(-9%, -7%) scale(1); }
+}
 
 .luma-input {
   transition: border-color .2s ease, box-shadow .25s ease, background .2s ease;
@@ -217,7 +225,7 @@ export function styles(t: Theme) {
       borderRadius: 22,
       padding: 20,
       marginBottom: 14,
-      boxShadow: `0 1px 0 color-mix(in srgb, ${t.txt} 5%, transparent) inset, 0 18px 40px -28px rgba(0,0,0,0.7)`,
+      boxShadow: `0 1px 0 color-mix(in srgb, ${t.txt} 6%, transparent) inset, 0 16px 38px -22px rgba(0,0,0,0.32)`,
     } as CSSProperties,
 
     input: {
@@ -432,13 +440,13 @@ export function Ring({
 export function tileStyle(t: Theme, accent: string): CSSProperties {
   return {
     position: 'relative',
-    background: `linear-gradient(160deg, color-mix(in srgb, ${accent} 13%, ${t.c1}), ${t.bg} 85%)`,
-    border: `1px solid color-mix(in srgb, ${accent} 26%, ${t.border})`,
+    background: `linear-gradient(155deg, color-mix(in srgb, ${accent} 17%, ${t.c1}), ${t.c1} 72%)`,
+    border: `1px solid color-mix(in srgb, ${accent} 30%, ${t.border})`,
     borderRadius: 24,
     padding: 18,
     cursor: 'pointer',
     overflow: 'hidden',
-    boxShadow: `0 1px 0 color-mix(in srgb, ${t.txt} 6%, transparent) inset, 0 22px 46px -30px rgba(0,0,0,0.85)`,
+    boxShadow: `0 1px 0 color-mix(in srgb, ${t.txt} 8%, transparent) inset, 0 22px 48px -26px color-mix(in srgb, ${accent} 35%, rgba(0,0,0,0.5))`,
   }
 }
 

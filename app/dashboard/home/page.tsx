@@ -12,7 +12,8 @@ type Pill = { id: string; name: string; scheduled_time: string }
 type Day = { date: string; value: number }
 type Snapshot = {
   name: string; cg: number; bg: number; cals: number; spent: number
-  mins: number; actsCount: number; pills: Pill[]; taken: string[]; week: Day[]
+  mins: number; actsCount: number; pills: Pill[]; taken: string[]
+  week: Day[]; weekCals: Day[]
 }
 
 const todayStr = () => new Date().toISOString().slice(0, 10)
@@ -51,6 +52,7 @@ export default function HomePage() {
   const [userName, setUserName] = useState('')
   const [hovered, setHovered] = useState<string | null>(null)
   const [week, setWeek] = useState<Day[]>([])
+  const [weekCals, setWeekCals] = useState<Day[]>([])
 
   const [dispCals, setDispCals] = useState(0)
   const [dispSpent, setDispSpent] = useState(0)
@@ -68,7 +70,7 @@ export default function HomePage() {
     const applyState = (d: Snapshot) => {
       setUserName(d.name); setCalGoal(d.cg); setBudget(d.bg)
       setTotalCals(d.cals); setTotalSpent(d.spent); setTotalMins(d.mins)
-      setActCount(d.actsCount); setPills(d.pills); setTakenIds(d.taken); setWeek(d.week)
+      setActCount(d.actsCount); setPills(d.pills); setTakenIds(d.taken); setWeek(d.week); setWeekCals(d.weekCals)
     }
 
     const pctOf = (a: number, b: number) => Math.min(100, Math.round(a / b * 100))
@@ -111,7 +113,7 @@ export default function HomePage() {
     if (!user) return
 
     const days = lastNDays(7, todayStr())
-    const [settings, foods, expenses, acts, pillData, takenData, weekActs] = await Promise.all([
+    const [settings, foods, expenses, acts, pillData, takenData, weekActs, weekFoods] = await Promise.all([
       supabase.from('user_settings').select('calorie_goal, monthly_budget').eq('user_id', user.id).maybeSingle(),
       supabase.from('food_logs').select('calories').eq('user_id', user.id).eq('date', todayStr()),
       supabase.from('expenses').select('amount').eq('user_id', user.id).gte('date', thisMonth() + '-01'),
@@ -119,10 +121,13 @@ export default function HomePage() {
       supabase.from('pills').select('id, name, scheduled_time').eq('user_id', user.id).order('scheduled_time', { ascending: true }),
       supabase.from('pills_taken').select('pill_id').eq('user_id', user.id).eq('date_taken', todayStr()),
       supabase.from('exercise_logs').select('duration_minutes, date').eq('user_id', user.id).gte('date', days[0]).lte('date', days[6]),
+      supabase.from('food_logs').select('calories, date').eq('user_id', user.id).gte('date', days[0]).lte('date', days[6]),
     ])
 
-    const byDate: Record<string, number> = {}
-    weekActs.data?.forEach((r: { duration_minutes: number; date: string }) => { byDate[r.date] = (byDate[r.date] || 0) + r.duration_minutes })
+    const minsByDate: Record<string, number> = {}
+    weekActs.data?.forEach((r: { duration_minutes: number; date: string }) => { minsByDate[r.date] = (minsByDate[r.date] || 0) + r.duration_minutes })
+    const calsByDate: Record<string, number> = {}
+    weekFoods.data?.forEach((r: { calories: number; date: string }) => { calsByDate[r.date] = (calsByDate[r.date] || 0) + r.calories })
 
     const snap: Snapshot = {
       name: user.user_metadata?.full_name?.split(' ')[0] || '',
@@ -134,7 +139,8 @@ export default function HomePage() {
       actsCount: acts.data?.length || 0,
       pills: pillData.data || [],
       taken: takenData.data?.map((t: { pill_id: string }) => t.pill_id) || [],
-      week: days.map(d => ({ date: d, value: byDate[d] || 0 })),
+      week: days.map(d => ({ date: d, value: minsByDate[d] || 0 })),
+      weekCals: days.map(d => ({ date: d, value: calsByDate[d] || 0 })),
     }
 
     cacheSet('home', snap)
@@ -188,6 +194,29 @@ export default function HomePage() {
   const medColor = allDone ? theme.green : hasDue ? theme.accent : theme.blue
   const pillsPct = pillsTotal > 0 ? Math.round(pillsDoneCount / pillsTotal * 100) : 0
 
+  // Weekly calorie series with today reflecting live edits, for the hero sparkline.
+  const calSeries = weekCals.map(d => d.date === todayStr() ? { ...d, value: totalCals } : d)
+  // "Showed up" streak — days this week with any food or movement logged.
+  const activeDays = week.map((d, i) => ({ date: d.date, active: d.value > 0 || (weekCals[i]?.value || 0) > 0 }))
+  const streak = activeDays.filter(a => a.active).length
+
+  // One-line smart insight for the masthead.
+  const insight = (() => {
+    if (calLeft < 0) return `${Math.abs(calLeft).toLocaleString()} kcal over goal today`
+    const parts: string[] = []
+    parts.push(totalCals > 0 ? `${calLeft.toLocaleString()} kcal to spare` : 'Nothing logged yet today')
+    if (pillsTotal > 0 && !allDone) parts.push(`${pillsTotal - pillsDoneCount} dose${pillsTotal - pillsDoneCount > 1 ? 's' : ''} to take`)
+    if (moneyLeft < 0) parts.push('over budget')
+    else if (totalMins > 0) parts.push(`${totalMins} min moved`)
+    return parts.join('  ·  ')
+  })()
+
+  const plainCard: React.CSSProperties = {
+    background: `linear-gradient(170deg, ${theme.c1}, ${theme.bg})`,
+    border: `1px solid ${theme.border}`, borderRadius: 24, padding: 18,
+    boxShadow: `0 1px 0 color-mix(in srgb, ${theme.txt} 6%, transparent) inset, 0 16px 38px -22px rgba(0,0,0,0.32)`,
+  }
+
   if (loading) return (
     <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: serif, fontSize: 26, color: theme.muted, letterSpacing: '0.04em' }}>
       <span style={{ animation: 'lumaPulse 1.8s ease-in-out infinite' }}>Luma</span>
@@ -197,42 +226,57 @@ export default function HomePage() {
   return (
     <div className="luma-home" style={{ padding: '40px 18px 24px', maxWidth: 540, margin: '0 auto', fontFamily: sans }}>
 
-      <div ref={greetingRef} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 30, opacity: 0 }}>
-        <div>
+      <div ref={greetingRef} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 26, opacity: 0 }}>
+        <div style={{ minWidth: 0 }}>
           <div style={{ ...label, marginBottom: 8 }}>{greeting()}</div>
-          <div style={{ fontFamily: serif, fontSize: 46, fontWeight: 400, color: theme.txt, lineHeight: 1.0, letterSpacing: '-0.02em', marginBottom: 9 }}>
+          <div style={{ fontFamily: serif, fontSize: 52, fontWeight: 400, color: theme.txt, lineHeight: 0.95, letterSpacing: '-0.025em', marginBottom: 12 }}>
             {userName || 'Wakib'}
           </div>
-          <div style={{ fontSize: 12.5, color: theme.sub, fontWeight: 400 }}>
-            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 13, color: theme.muted, flexWrap: 'wrap' }}>
+            <span style={{ color: theme.sub }}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</span>
+            <span style={{ width: 3, height: 3, borderRadius: 999, background: theme.sub, opacity: 0.6 }} />
+            <span style={{ color: calLeft < 0 || moneyLeft < 0 ? theme.red : theme.muted }}>{insight}</span>
           </div>
         </div>
         <div style={{
-          width: 50, height: 50, borderRadius: '50%', flexShrink: 0,
+          width: 52, height: 52, borderRadius: '50%', flexShrink: 0, marginLeft: 14,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontFamily: serif, fontSize: 22, color: theme.accent,
-          background: `linear-gradient(150deg, color-mix(in srgb, ${theme.accent} 26%, ${theme.c1}), ${theme.c1})`,
-          border: `1px solid color-mix(in srgb, ${theme.accent} 32%, ${theme.border})`,
-          boxShadow: `0 8px 22px -12px ${theme.accent}`,
+          fontFamily: serif, fontSize: 23, color: theme.accent,
+          background: `linear-gradient(150deg, color-mix(in srgb, ${theme.accent} 28%, ${theme.c1}), ${theme.c1})`,
+          border: `1px solid color-mix(in srgb, ${theme.accent} 34%, ${theme.border})`,
+          boxShadow: `0 10px 26px -12px ${theme.accent}`,
         }}>{(userName || 'W').charAt(0).toUpperCase()}</div>
       </div>
 
       <div ref={sectionsRef} className="luma-bento" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 13 }}>
 
-        {/* Nutrition — hero ring */}
-        <div className="home-section luma-card b-span2" style={{ ...tileStyle(theme, nutColor), opacity: 0, display: 'flex', alignItems: 'center', gap: 20, ...dim('nutrition') }}
+        {/* Nutrition — HERO: big ring + headline + weekly calorie trend */}
+        <div className="home-section luma-card b-wide" style={{ ...tileStyle(theme, nutColor), opacity: 0, padding: 22, ...dim('nutrition') }}
           onClick={() => router.push('/dashboard/nutrition')} {...hover('nutrition')}>
-          <Ring size={118} stroke={11} pct={calPct} color={nutColor} track={theme.c2}>
-            <span style={{ fontFamily: serif, fontSize: 30, color: theme.txt, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{dispCals.toLocaleString()}</span>
-            <span style={{ ...label, fontSize: 9, marginTop: 4 }}>kcal</span>
-          </Ring>
-          <div style={{ flex: 1 }}>
-            <TileHead icon="nutrition" name="Nutrition" accent={nutColor} />
-            <div style={{ fontFamily: serif, fontSize: 34, color: nutColor, lineHeight: 1, letterSpacing: '-0.02em' }}>
-              {calLeft < 0 ? `${Math.abs(calLeft).toLocaleString()}` : calLeft.toLocaleString()}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: 10, color: nutColor, background: `color-mix(in srgb, ${nutColor} 16%, transparent)`, border: `1px solid color-mix(in srgb, ${nutColor} 26%, transparent)` }}><Icon name="nutrition" size={16} stroke={1.8} /></span>
+              <span style={label}>Nutrition · Today</span>
             </div>
-            <div style={{ fontSize: 12.5, color: theme.muted, marginTop: 6 }}>
-              {calLeft < 0 ? 'kcal over goal' : `kcal left of ${calGoal.toLocaleString()}`}
+            <span style={{ color: theme.muted, opacity: 0.45, display: 'flex' }}><Icon name="arrowRight" size={16} stroke={1.6} /></span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+            <Ring size={138} stroke={13} pct={calPct} color={nutColor} track={theme.c2}>
+              <span style={{ fontFamily: serif, fontSize: 36, color: theme.txt, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{dispCals.toLocaleString()}</span>
+              <span style={{ ...label, fontSize: 9, marginTop: 5 }}>kcal eaten</span>
+            </Ring>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontFamily: serif, fontSize: 46, color: nutColor, lineHeight: 0.95, letterSpacing: '-0.02em' }}>
+                {calLeft < 0 ? `+${Math.abs(calLeft).toLocaleString()}` : calLeft.toLocaleString()}
+              </div>
+              <div style={{ fontSize: 13, color: theme.muted, marginTop: 7 }}>
+                {calLeft < 0 ? 'kcal over your goal' : `kcal left of ${calGoal.toLocaleString()}`}
+              </div>
+              {calSeries.some(d => d.value > 0) && (
+                <div style={{ marginTop: 18 }}>
+                  <WeekChart t={theme} color={nutColor} goal={calGoal} data={calSeries} fmt={v => Math.round(v).toLocaleString()} />
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -277,8 +321,8 @@ export default function HomePage() {
           )}
         </div>
 
-        {/* Movement — wide tile with week bars */}
-        <div className="home-section luma-card b-wide" style={{ ...tileStyle(theme, theme.accent), opacity: 0, ...dim('exercise') }}
+        {/* Movement — half-width tile with week bars */}
+        <div className="home-section luma-card b-span2" style={{ ...tileStyle(theme, theme.accent), opacity: 0, ...dim('exercise') }}
           onClick={() => router.push('/dashboard/exercise')} {...hover('exercise')}>
           <TileHead icon="move" name="Movement" accent={theme.accent} />
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 22, marginBottom: week.some(d => d.value > 0) ? 18 : 0 }}>
@@ -296,6 +340,40 @@ export default function HomePage() {
           {week.some(d => d.value > 0) && (
             <WeekChart t={theme} color={theme.accent} data={week} fmt={v => Math.round(v) + 'm'} />
           )}
+        </div>
+
+        {/* Streak — "showing up" consistency band */}
+        <div className="home-section b-wide" style={{ ...plainCard, opacity: 0, display: 'flex', alignItems: 'center', gap: 22, flexWrap: 'wrap' }}>
+          <div style={{ minWidth: 120 }}>
+            <div style={{ ...label, marginBottom: 9 }}>Showing up</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+              <span style={{ fontFamily: serif, fontSize: 40, color: streak > 0 ? theme.accent : theme.sub, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{streak}</span>
+              <span style={{ fontFamily: serif, fontSize: 24, color: theme.sub }}>/7</span>
+              <span style={{ fontSize: 12, color: theme.muted, marginLeft: 6 }}>days this week</span>
+            </div>
+          </div>
+          <div style={{ flex: 1, display: 'flex', gap: 8, minWidth: 220 }}>
+            {activeDays.map(d => {
+              const isToday = d.date === todayStr()
+              return (
+                <div key={d.date} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                  <div style={{
+                    width: '100%', maxWidth: 40, aspectRatio: '1', borderRadius: 12,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: d.active ? `linear-gradient(150deg, ${theme.accent}, color-mix(in srgb, ${theme.accent} 62%, ${theme.bg}))` : theme.c2,
+                    border: isToday ? `1.5px solid ${theme.accent}` : `1px solid ${theme.border}`,
+                    boxShadow: d.active ? `0 6px 14px -6px ${theme.accent}` : 'none',
+                    color: theme.bg,
+                  }}>
+                    {d.active && <Icon name="check" size={15} stroke={2.4} />}
+                  </div>
+                  <span style={{ fontFamily: sans, fontSize: 9.5, fontWeight: isToday ? 700 : 500, color: isToday ? theme.accent : theme.sub }}>
+                    {['S', 'M', 'T', 'W', 'T', 'F', 'S'][new Date(d.date + 'T12:00').getDay()]}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
         </div>
 
       </div>

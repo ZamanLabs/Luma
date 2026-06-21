@@ -20,6 +20,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter()
   const { theme } = useTheme()
 
+  // Aurora hues shift through the day, drawn from the active theme's palette.
+  const hour = new Date().getHours()
+  const aurora =
+    hour < 5  ? [theme.blue, theme.purple] :   // night
+    hour < 11 ? [theme.accent, theme.green] :  // morning
+    hour < 17 ? [theme.green, theme.blue] :    // afternoon
+    hour < 22 ? [theme.purple, theme.accent] : // evening
+                [theme.blue, theme.purple]     // late night
+  const isLight = theme.name === 'Snow' || theme.name === 'Paper'
+  const auroraStrength = isLight ? 26 : 30
+
   // Expose theme colors as CSS custom properties so the global stylesheet
   // (focus rings, hovers) can stay theme-aware.
   const cssVars = {
@@ -40,25 +51,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div style={{ ...cssVars, minHeight: '100vh', background: theme.bg, color: theme.txt, fontFamily: sans, position: 'relative' }}>
       <style>{FONT_IMPORT + GLOBAL_CSS}</style>
 
-      {/* Ambient background — soft accent glow + faint grain, theme-aware */}
-      <div
-        className="luma-ambient"
-        style={{
-          position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0,
-          background: `radial-gradient(120% 80% at 50% -10%, color-mix(in srgb, ${theme.accent} 9%, transparent) 0%, transparent 55%)`,
-          animation: 'lumaFloat 18s ease-in-out infinite',
-        }}
-      />
-      <div
-        style={{
-          position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0, opacity: 0.5,
+      {/* Signature ambient — a slow aurora that drifts and shifts with the
+          time of day (warm at dawn, cool at night), tinted to the theme. */}
+      <div style={{ position: 'fixed', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: 0 }}>
+        <div className="luma-ambient" style={{
+          position: 'absolute', top: '-25%', left: '-15%', width: '75vw', height: '75vw', borderRadius: '50%',
+          background: `radial-gradient(circle, color-mix(in srgb, ${aurora[0]} ${auroraStrength}%, transparent), transparent 62%)`,
+          filter: 'blur(72px)', animation: 'lumaAurora1 26s ease-in-out infinite',
+        }} />
+        <div className="luma-ambient" style={{
+          position: 'absolute', top: '15%', right: '-20%', width: '70vw', height: '70vw', borderRadius: '50%',
+          background: `radial-gradient(circle, color-mix(in srgb, ${aurora[1]} ${auroraStrength}%, transparent), transparent 62%)`,
+          filter: 'blur(80px)', animation: 'lumaAurora2 34s ease-in-out infinite',
+        }} />
+        <div style={{
+          position: 'absolute', inset: 0, opacity: 0.5,
           backgroundImage: 'radial-gradient(circle, color-mix(in srgb, currentColor 5%, transparent) 1px, transparent 1px)',
-          backgroundSize: '34px 34px',
-          color: theme.muted,
-          maskImage: 'radial-gradient(ellipse 80% 60% at 50% 0%, black 5%, transparent 75%)',
-          WebkitMaskImage: 'radial-gradient(ellipse 80% 60% at 50% 0%, black 5%, transparent 75%)',
-        }}
-      />
+          backgroundSize: '34px 34px', color: theme.muted,
+          maskImage: 'radial-gradient(ellipse 80% 60% at 50% 0%, black 5%, transparent 70%)',
+          WebkitMaskImage: 'radial-gradient(ellipse 80% 60% at 50% 0%, black 5%, transparent 70%)',
+        }} />
+      </div>
 
       {/* Desktop: left sidebar */}
       <nav className="luma-side-nav" style={{
