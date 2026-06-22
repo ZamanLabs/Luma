@@ -9,6 +9,7 @@ import { Icon, Ring, WeekChart, tileStyle, lastNDays, useProfileMenu, serif, san
 import { cacheGet, cacheSet } from '../cache'
 import WeeklyReview from './WeeklyReview'
 import Bloom, { type BloomInput } from '../../Bloom'
+import Onboarding from './Onboarding'
 
 type Pill = { id: string; name: string; scheduled_time: string }
 type Day = { date: string; value: number }
@@ -58,6 +59,8 @@ export default function HomePage() {
   const [weekCals, setWeekCals] = useState<Day[]>([])
   const [foodCount, setFoodCount] = useState(0)
   const [expenseToday, setExpenseToday] = useState(0)
+  const [firstRun, setFirstRun] = useState(false)
+  const [uid, setUid] = useState<string | null>(null)
 
   const [dispCals, setDispCals] = useState(0)
   const [dispSpent, setDispSpent] = useState(0)
@@ -117,6 +120,7 @@ export default function HomePage() {
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
+    setUid(user.id)
 
     const days = lastNDays(7, todayStr())
     const [settings, foods, expenses, acts, pillData, takenData, weekActs, weekFoods] = await Promise.all([
@@ -129,6 +133,9 @@ export default function HomePage() {
       supabase.from('exercise_logs').select('duration_minutes, date').eq('user_id', user.id).gte('date', days[0]).lte('date', days[6]),
       supabase.from('food_logs').select('calories, date').eq('user_id', user.id).gte('date', days[0]).lte('date', days[6]),
     ])
+
+    // No settings row yet → first run. Greet + collect goal/budget.
+    setFirstRun(!settings.data)
 
     const minsByDate: Record<string, number> = {}
     weekActs.data?.forEach((r: { duration_minutes: number; date: string }) => { minsByDate[r.date] = (minsByDate[r.date] || 0) + r.duration_minutes })
@@ -239,6 +246,12 @@ export default function HomePage() {
   }
   const tended = `${entries} ${entries === 1 ? 'thing' : 'things'} tended today`
 
+  const completeOnboarding = async (goal: number, budget: number) => {
+    setFirstRun(false)
+    setCalGoal(goal); setBudget(budget)
+    if (uid) await supabase.from('user_settings').upsert({ user_id: uid, calorie_goal: goal, monthly_budget: budget, updated_at: Date.now() }, { onConflict: 'user_id' })
+  }
+
   if (loading) return (
     <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: serif, fontSize: 26, color: theme.muted, letterSpacing: '0.04em' }}>
       <span style={{ animation: 'lumaPulse 1.8s ease-in-out infinite' }}>Luma</span>
@@ -247,6 +260,8 @@ export default function HomePage() {
 
   return (
     <div className="luma-home" style={{ padding: '40px 18px 24px', maxWidth: 540, margin: '0 auto', fontFamily: sans }}>
+
+      {firstRun && <Onboarding t={theme} name={userName} onComplete={completeOnboarding} />}
 
       <div ref={greetingRef} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 26, opacity: 0 }}>
         <div style={{ minWidth: 0 }}>

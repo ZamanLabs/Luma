@@ -6,6 +6,7 @@ import { useTheme } from '../../ThemeContext'
 import { animate, stagger } from 'animejs'
 import { styles, PageHeader, CardLabel, Loader, EmptyState, WeekChart, Ring, lastNDays, Icon, serif, sans } from '../ui'
 import { cacheGet, cacheSet } from '../cache'
+import { useToast } from '../Toast'
 
 type Expense = { id: string; name: string; amount: number; category: string; date: string }
 type Day = { date: string; value: number }
@@ -18,6 +19,7 @@ const fmtMonth = (m: string) => new Date(m + '-01').toLocaleDateString('en-US', 
 export default function FinancePage() {
   const supabase = createClient()
   const { theme } = useTheme()
+  const toast = useToast()
 
   const CAT_COLORS: Record<string, string> = {
     Necessity: theme.green, Optional: theme.blue,
@@ -124,15 +126,17 @@ export default function FinancePage() {
   }, [supabase, viewMonth, loadData])
 
   const logExpense = async (expName: string, amt: number, cat: string) => {
-    if (!expName.trim() || !amt || !userId) return
+    if (!expName.trim() || !amt || amt <= 0 || !userId) return
     const now = Date.now()
     const entry = { user_id: userId, name: expName.trim(), amount: amt, category: cat, date: todayStr(), updated_at: now, created_at: now }
-    const { data } = await supabase.from('expenses').insert(entry).select().single()
-    if (data) {
-      const next = [data, ...expenses]
-      setExpenses(next)
-      adjustWeek(data.date, data.amount, next)
+    const { data, error } = await supabase.from('expenses').insert(entry).select().single()
+    if (error || !data) {
+      toast.error("Couldn't save that expense", { onRetry: () => logExpense(expName, amt, cat) })
+      return
     }
+    const next = [data, ...expenses]
+    setExpenses(next)
+    adjustWeek(data.date, data.amount, next)
   }
 
   const addExpense = async () => {
@@ -140,12 +144,25 @@ export default function FinancePage() {
     setName(''); setAmount('')
   }
 
-  const deleteExpense = async (id: string) => {
-    const removed = expenses.find(e => e.id === id)
-    await supabase.from('expenses').delete().eq('id', id)
+  const deleteExpense = (id: string) => {
+    const idx = expenses.findIndex(e => e.id === id)
+    if (idx < 0) return
+    const item = expenses[idx]
     const next = expenses.filter(e => e.id !== id)
     setExpenses(next)
-    if (removed) adjustWeek(removed.date, -removed.amount, next)
+    adjustWeek(item.date, -item.amount, next)
+    const restore = () => {
+      const r = [...next.slice(0, idx), item, ...next.slice(idx)]
+      setExpenses(r)
+      adjustWeek(item.date, item.amount, r)
+    }
+    toast.undo('Expense removed', {
+      onUndo: restore,
+      onCommit: async () => {
+        const { error } = await supabase.from('expenses').delete().eq('id', id)
+        if (error) { restore(); toast.error("Couldn't delete — restored it") }
+      },
+    })
   }
 
   // Apply an optimistic delta to the matching day of the week chart + cache.

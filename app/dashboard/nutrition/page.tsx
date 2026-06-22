@@ -7,6 +7,7 @@ import { animate, stagger } from 'animejs'
 import { styles, PageHeader, CardLabel, Loader, EmptyState, WeekChart, Ring, lastNDays, Icon, serif, sans } from '../ui'
 import { cacheGet, cacheSet } from '../cache'
 import { COMMON_FOODS, type FoodRef } from '../foods'
+import { useToast } from '../Toast'
 
 type FoodLog = { id: string; name: string; calories: number; date: string; time: string }
 type Day = { date: string; value: number }
@@ -19,6 +20,7 @@ const fmtDate = (d: string) => new Date(d + 'T12:00').toLocaleDateString('en-US'
 export default function NutritionPage() {
   const supabase = createClient()
   const { theme } = useTheme()
+  const toast = useToast()
 
   const [foods, setFoods] = useState<FoodLog[]>([])
   const [calGoal, setCalGoal] = useState(2000)
@@ -122,20 +124,22 @@ export default function NutritionPage() {
   }, [supabase, viewDate, loadData])
 
   const logFood = async (foodName: string, kcal: number) => {
-    if (!foodName.trim() || !kcal || !userId || viewDate !== todayStr()) return
+    if (!foodName.trim() || !kcal || kcal <= 0 || !userId || viewDate !== todayStr()) return
     const now = Date.now()
     const entry = { user_id: userId, name: foodName.trim(), calories: Math.round(kcal), date: viewDate, time: timeNow(), updated_at: now, created_at: now }
-    const { data } = await supabase.from('food_logs').insert(entry).select().single()
-    if (data) {
-      const updated = [...foods, data]
-      setFoods(updated)
-      const total = updated.reduce((s, f) => s + f.calories, 0)
-      setDispCals(total)
-      syncWeekToday(updated, total)
-      if (barRef.current) {
-        const pct = Math.min(100, Math.round(total / calGoal * 100))
-        animate(barRef.current, { width: [`${Math.min(100, Math.round((total - data.calories) / calGoal * 100))}%`, `${pct}%`], duration: 600, ease: 'outExpo' })
-      }
+    const { data, error } = await supabase.from('food_logs').insert(entry).select().single()
+    if (error || !data) {
+      toast.error("Couldn't save that meal", { onRetry: () => logFood(foodName, kcal) })
+      return
+    }
+    const updated = [...foods, data]
+    setFoods(updated)
+    const total = updated.reduce((s, f) => s + f.calories, 0)
+    setDispCals(total)
+    syncWeekToday(updated, total)
+    if (barRef.current) {
+      const pct = Math.min(100, Math.round(total / calGoal * 100))
+      animate(barRef.current, { width: [`${Math.min(100, Math.round((total - data.calories) / calGoal * 100))}%`, `${pct}%`], duration: 600, ease: 'outExpo' })
     }
   }
 
@@ -153,14 +157,26 @@ export default function NutritionPage() {
       ].slice(0, 6)
     : []
 
-  const deleteFood = async (id: string) => {
+  const deleteFood = (id: string) => {
     if (viewDate !== todayStr()) return
-    await supabase.from('food_logs').delete().eq('id', id)
+    const idx = foods.findIndex(f => f.id === id)
+    if (idx < 0) return
+    const item = foods[idx]
     const updated = foods.filter(f => f.id !== id)
-    setFoods(updated)
-    const total = updated.reduce((s, f) => s + f.calories, 0)
-    setDispCals(total)
-    syncWeekToday(updated, total)
+    const apply = (arr: FoodLog[]) => {
+      setFoods(arr)
+      const tt = arr.reduce((s, f) => s + f.calories, 0)
+      setDispCals(tt); syncWeekToday(arr, tt)
+    }
+    const restore = () => apply([...updated.slice(0, idx), item, ...updated.slice(idx)])
+    apply(updated)
+    toast.undo('Meal removed', {
+      onUndo: restore,
+      onCommit: async () => {
+        const { error } = await supabase.from('food_logs').delete().eq('id', id)
+        if (error) { restore(); toast.error("Couldn't delete — restored it") }
+      },
+    })
   }
 
   // Keep the week chart's current-day bar + cache in step with optimistic edits.

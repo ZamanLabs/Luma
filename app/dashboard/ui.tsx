@@ -50,6 +50,10 @@ export const GLOBAL_CSS = `
   0%, 100% { transform: translate(9%, 7%) scale(1.12); }
   50%      { transform: translate(-9%, -7%) scale(1); }
 }
+@keyframes lumaToastIn {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
 
 .luma-input {
   transition: border-color .2s ease, box-shadow .25s ease, background .2s ease;

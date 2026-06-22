@@ -7,6 +7,7 @@ import { themes } from '../theme'
 import { createClient } from '@/utils/supabase/client'
 import { FONT_IMPORT, GLOBAL_CSS, Icon, ProfileMenuContext, serif, sans } from './ui'
 import Cursor from './Cursor'
+import { ToastProvider } from './Toast'
 
 const tabs = [
   { id: 'home',      icon: 'home',      label: 'Home',    path: '/dashboard/home'      },
@@ -167,7 +168,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </nav>
 
       <main className="luma-main" style={{ position: 'relative', zIndex: 1, paddingBottom: 96 }}>
-        {children}
+        <ToastProvider>{children}</ToastProvider>
       </main>
 
       {/* Mobile: bottom nav */}

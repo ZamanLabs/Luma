@@ -6,6 +6,7 @@ import { useTheme } from '../../ThemeContext'
 import { animate, stagger } from 'animejs'
 import { styles, PageHeader, CardLabel, Loader, EmptyState, Ring, Icon, serif, sans } from '../ui'
 import { cacheGet, cacheSet } from '../cache'
+import { useToast } from '../Toast'
 
 type MedCache = { pills: Pill[]; taken: string[] }
 
@@ -19,6 +20,7 @@ const fmtDate = (d: string) => new Date(d + 'T12:00').toLocaleDateString('en-US'
 export default function MedsPage() {
   const supabase = createClient()
   const { theme } = useTheme()
+  const toast = useToast()
 
   const [pills, setPills] = useState<Pill[]>([])
   const [taken, setTaken] = useState<string[]>([])
@@ -98,34 +100,50 @@ export default function MedsPage() {
   const addPill = async () => {
     if (!pillName.trim() || !pillTime || !userId) return
     const now = Date.now()
-    const { data } = await supabase.from('pills').insert({ user_id: userId, name: pillName.trim(), scheduled_time: pillTime, updated_at: now, created_at: now }).select().single()
-    if (data) {
-      const next = [...pills, data].sort((a, b) => a.scheduled_time.localeCompare(b.scheduled_time))
-      setPills(next)
-      syncCache(next, taken)
-    }
+    const { data, error } = await supabase.from('pills').insert({ user_id: userId, name: pillName.trim(), scheduled_time: pillTime, updated_at: now, created_at: now }).select().single()
+    if (error || !data) { toast.error("Couldn't add that medication"); return }
+    const next = [...pills, data].sort((a, b) => a.scheduled_time.localeCompare(b.scheduled_time))
+    setPills(next)
+    syncCache(next, taken)
     setPillName(''); setPillTime('')
   }
 
-  const deletePill = async (id: string) => {
-    await supabase.from('pills').delete().eq('id', id)
-    await supabase.from('pills_taken').delete().eq('pill_id', id)
+  const deletePill = (id: string) => {
+    const idx = pills.findIndex(p => p.id === id)
+    if (idx < 0) return
+    const item = pills[idx]
+    const wasTaken = taken.includes(id)
     const nextPills = pills.filter(p => p.id !== id)
     const nextTaken = taken.filter(t => t !== id)
-    setPills(nextPills); setTaken(nextTaken)
-    syncCache(nextPills, nextTaken)
+    setPills(nextPills); setTaken(nextTaken); syncCache(nextPills, nextTaken)
+    const restore = () => {
+      const rp = [...nextPills.slice(0, idx), item, ...nextPills.slice(idx)]
+      const rt = wasTaken ? [...nextTaken, id] : nextTaken
+      setPills(rp); setTaken(rt); syncCache(rp, rt)
+    }
+    toast.undo('Medication removed', {
+      onUndo: restore,
+      onCommit: async () => {
+        const { error } = await supabase.from('pills').delete().eq('id', id)
+        await supabase.from('pills_taken').delete().eq('pill_id', id)
+        if (error) { restore(); toast.error("Couldn't delete — restored it") }
+      },
+    })
   }
 
   const toggleTaken = async (pillId: string) => {
     if (!userId || viewDate !== todayStr()) return
-    const nextTaken = taken.includes(pillId) ? taken.filter(t => t !== pillId) : [...taken, pillId]
+    const wasTaken = taken.includes(pillId)
+    const prev = taken
+    const nextTaken = wasTaken ? taken.filter(t => t !== pillId) : [...taken, pillId]
     setTaken(nextTaken)
     syncCache(pills, nextTaken)
-    if (taken.includes(pillId)) {
-      await supabase.from('pills_taken').delete().eq('pill_id', pillId).eq('user_id', userId).eq('date_taken', viewDate)
-    } else {
-      const now = Date.now()
-      await supabase.from('pills_taken').insert({ user_id: userId, pill_id: pillId, date_taken: viewDate, updated_at: now, created_at: now })
+    const { error } = wasTaken
+      ? await supabase.from('pills_taken').delete().eq('pill_id', pillId).eq('user_id', userId).eq('date_taken', viewDate)
+      : await supabase.from('pills_taken').insert({ user_id: userId, pill_id: pillId, date_taken: viewDate, updated_at: Date.now(), created_at: Date.now() })
+    if (error) {
+      setTaken(prev); syncCache(pills, prev)
+      toast.error(wasTaken ? "Couldn't update that dose" : "Couldn't mark dose as taken")
     }
   }
 

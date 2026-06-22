@@ -6,6 +6,7 @@ import { useTheme } from '../../ThemeContext'
 import { animate, stagger } from 'animejs'
 import { styles, PageHeader, CardLabel, Loader, EmptyState, WeekChart, lastNDays, Icon, serif, sans } from '../ui'
 import { cacheGet, cacheSet } from '../cache'
+import { useToast } from '../Toast'
 
 type ExerciseLog = { id: string; type: string; duration_minutes: number; notes: string; date: string; time: string }
 type Day = { date: string; value: number }
@@ -27,6 +28,7 @@ const fmtTimer = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart
 export default function ExercisePage() {
   const supabase = createClient()
   const { theme } = useTheme()
+  const toast = useToast()
 
   const [acts, setActs] = useState<ExerciseLog[]>([])
   const [userId, setUserId] = useState<string | null>(null)
@@ -121,17 +123,19 @@ export default function ExercisePage() {
   }, [supabase, viewDate, loadData])
 
   const logActivity = async (t: string, mins: number, n: string) => {
-    if (!mins || !userId || viewDate !== todayStr()) return
+    if (!mins || mins <= 0 || !userId || viewDate !== todayStr()) return
     const now = Date.now()
     const entry = { user_id: userId, type: t, duration_minutes: Math.round(mins), notes: n.trim(), date: viewDate, time: timeNow(), updated_at: now, created_at: now }
-    const { data } = await supabase.from('exercise_logs').insert(entry).select().single()
-    if (data) {
-      const next = [...acts, data]
-      setActs(next)
-      setDispMins(prev => prev + data.duration_minutes)
-      setDispActs(prev => prev + 1)
-      adjustWeek(data.date, data.duration_minutes, next)
+    const { data, error } = await supabase.from('exercise_logs').insert(entry).select().single()
+    if (error || !data) {
+      toast.error("Couldn't save that activity", { onRetry: () => logActivity(t, mins, n) })
+      return
     }
+    const next = [...acts, data]
+    setActs(next)
+    setDispMins(prev => prev + data.duration_minutes)
+    setDispActs(prev => prev + 1)
+    adjustWeek(data.date, data.duration_minutes, next)
   }
 
   const addActivity = async () => {
@@ -158,17 +162,30 @@ export default function ExercisePage() {
   }
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current) }, [])
 
-  const deleteActivity = async (id: string) => {
+  const deleteActivity = (id: string) => {
     if (viewDate !== todayStr()) return
-    const removed = acts.find(a => a.id === id)
-    await supabase.from('exercise_logs').delete().eq('id', id)
+    const idx = acts.findIndex(a => a.id === id)
+    if (idx < 0) return
+    const item = acts[idx]
     const next = acts.filter(a => a.id !== id)
     setActs(next)
-    if (removed) {
-      setDispMins(prev => prev - removed.duration_minutes)
-      setDispActs(prev => prev - 1)
-      adjustWeek(removed.date, -removed.duration_minutes, next)
+    setDispMins(prev => prev - item.duration_minutes)
+    setDispActs(prev => prev - 1)
+    adjustWeek(item.date, -item.duration_minutes, next)
+    const restore = () => {
+      const r = [...next.slice(0, idx), item, ...next.slice(idx)]
+      setActs(r)
+      setDispMins(prev => prev + item.duration_minutes)
+      setDispActs(prev => prev + 1)
+      adjustWeek(item.date, item.duration_minutes, r)
     }
+    toast.undo('Activity removed', {
+      onUndo: restore,
+      onCommit: async () => {
+        const { error } = await supabase.from('exercise_logs').delete().eq('id', id)
+        if (error) { restore(); toast.error("Couldn't delete — restored it") }
+      },
+    })
   }
 
   const adjustWeek = (date: string, delta: number, items: ExerciseLog[]) => {
