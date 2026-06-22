@@ -37,6 +37,9 @@ export default function NutritionPage() {
   const [week, setWeek] = useState<Day[]>([])
   const [frequent, setFrequent] = useState<FoodRef[]>([])
   const [focused, setFocused] = useState(false)
+  const [aiText, setAiText] = useState('')
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiRes, setAiRes] = useState<{ items: { name: string; kcal: number }[]; total: number; note: string } | null>(null)
 
   const headerRef = useRef<HTMLDivElement>(null)
   const cardRef = useRef<HTMLDivElement>(null)
@@ -147,6 +150,28 @@ export default function NutritionPage() {
   const addFood = async () => {
     await logFood(name, parseInt(calories))
     setName(''); setCalories(''); setFocused(false)
+  }
+
+  // Ask Claude (server-side, Haiku) to estimate calories from a free-text meal.
+  const askClaude = async () => {
+    const q = aiText.trim()
+    if (!q || aiBusy) return
+    setAiBusy(true); setAiRes(null)
+    try {
+      const r = await fetch('/api/estimate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: q }) })
+      const data = await r.json()
+      if (!r.ok) { toast.error(data.error || 'Couldn’t estimate that.'); return }
+      setAiRes(data)
+    } catch {
+      toast.error('Couldn’t reach the estimator.')
+    } finally {
+      setAiBusy(false)
+    }
+  }
+  const logEstimate = async () => {
+    if (!aiRes) return
+    await logFood(aiText.trim().slice(0, 60), aiRes.total)
+    setAiRes(null); setAiText('')
   }
 
   // Quick-add suggestions while typing: your recents first, then the built-in list.
@@ -281,6 +306,41 @@ export default function NutritionPage() {
       {isToday && (
         <div ref={formRef} className="luma-card" style={{ ...s.card, opacity: 0 }}>
           <CardLabel t={theme}>Log Meal</CardLabel>
+
+          {/* Ask Claude — estimate calories for messy / composite meals */}
+          <div style={{ marginBottom: 16, padding: 14, borderRadius: 14, background: `color-mix(in srgb, ${theme.accent} 7%, ${theme.c2})`, border: `1px solid color-mix(in srgb, ${theme.accent} 22%, ${theme.border})` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 9 }}>
+              <span style={{ color: theme.accent, display: 'flex' }}><Icon name="sparkle" size={15} stroke={1.8} /></span>
+              <span style={{ ...s.label, color: theme.accent }}>Ask Claude</span>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input className="luma-input" value={aiText} onChange={e => setAiText(e.target.value)} onKeyDown={e => e.key === 'Enter' && askClaude()}
+                placeholder="e.g. 8 fried eggs and 4 Maggi noodles" style={{ ...inp, flex: 1 }} />
+              <button className="luma-btn" onClick={askClaude} disabled={aiBusy}
+                style={{ ...s.primaryBtn, opacity: aiBusy ? 0.7 : 1, display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                {aiBusy ? 'Thinking…' : <><Icon name="sparkle" size={15} stroke={2} />Estimate</>}
+              </button>
+            </div>
+            {aiRes && (
+              <div style={{ marginTop: 12 }}>
+                {aiRes.items.map((it, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, fontSize: 13, color: theme.muted, padding: '4px 0', fontFamily: sans }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.name}</span>
+                    <span style={{ fontFamily: serif, fontSize: 15, color: theme.txt, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{it.kcal}</span>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingTop: 8, borderTop: `1px solid ${theme.border}` }}>
+                  <span style={{ ...s.label }}>≈ Total</span>
+                  <span style={{ fontFamily: serif, fontSize: 26, color: theme.accent, fontVariantNumeric: 'tabular-nums' }}>{aiRes.total.toLocaleString()} <span style={{ fontSize: 12, color: theme.muted, fontFamily: sans }}>kcal</span></span>
+                </div>
+                {aiRes.note && <div style={{ fontSize: 12, color: theme.sub, marginTop: 6, fontStyle: 'italic', fontFamily: serif }}>{aiRes.note}</div>}
+                <button className="luma-btn" onClick={logEstimate} style={{ ...s.primaryBtn, width: '100%', marginTop: 11, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+                  <Icon name="plus" size={16} stroke={2} />Log {aiRes.total.toLocaleString()} kcal
+                </button>
+              </div>
+            )}
+            <div style={{ fontSize: 10.5, color: theme.sub, marginTop: 9, fontFamily: sans }}>Estimates are approximate — tweak before logging if needed.</div>
+          </div>
 
           {frequent.length > 0 && (
             <div style={{ marginBottom: 14 }}>
