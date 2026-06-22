@@ -9,6 +9,7 @@ import { FONT_IMPORT, GLOBAL_CSS, Icon, ProfileMenuContext, serif, sans } from '
 import Cursor from './Cursor'
 import { ToastProvider } from './Toast'
 import Ember from './Ember'
+import Intro from './Intro'
 
 const tabs = [
   { id: 'home',      icon: 'home',      label: 'Home',    path: '/dashboard/home'      },
@@ -122,6 +123,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div style={{ ...cssVars, minHeight: '100vh', background: theme.bg, color: theme.txt, fontFamily: sans, position: 'relative' }}>
       <style>{FONT_IMPORT + GLOBAL_CSS}</style>
       <Cursor accent={theme.accent} />
+      <Intro />
 
       {/* Signature ambient — a slow aurora that drifts and shifts with the
           time of day (warm at dawn, cool at night), tinted to the theme. */}
