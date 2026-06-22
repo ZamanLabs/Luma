@@ -96,6 +96,22 @@ export const GLOBAL_CSS = `
   .luma-ambient { animation: none !important; }
 }
 
+@media (pointer: fine) {
+  .luma-cursor-on, .luma-cursor-on * { cursor: none; }
+  .luma-cursor-on input, .luma-cursor-on textarea, .luma-cursor-on select, .luma-cursor-on [contenteditable] { cursor: auto; }
+}
+@media (pointer: coarse) { .luma-cur { display: none; } }
+.luma-cur { position: fixed; top: 0; left: 0; z-index: 9999; pointer-events: none; border-radius: 50%; will-change: transform; }
+
+/* Cursor-tracking spotlight on interactive tiles */
+.luma-tile::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 0;
+  background: radial-gradient(240px circle at var(--mx, 50%) var(--my, 50%), color-mix(in srgb, var(--accent) 20%, transparent), transparent 60%);
+  opacity: 0; transition: opacity .4s ease;
+}
+.luma-tile:hover::after { opacity: 1; }
+.luma-tile > * { position: relative; z-index: 1; }
+
 .luma-side-nav { display: none; }
 .b-span2 { grid-column: span 2; }
 .b-wide { grid-column: span 2; }

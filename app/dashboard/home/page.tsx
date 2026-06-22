@@ -290,7 +290,7 @@ export default function HomePage() {
         </div>
 
         {/* Nutrition — ring tile */}
-        <div className="home-section luma-card" style={{ ...tileStyle(theme, nutColor), opacity: 0, ...dim('nutrition') }}
+        <div className="home-section luma-card luma-tile" style={{ ...tileStyle(theme, nutColor), opacity: 0, ...dim('nutrition') }}
           onClick={() => router.push('/dashboard/nutrition')} {...hover('nutrition')}>
           <TileHead icon="nutrition" name="Eat" accent={nutColor} />
           <div style={{ display: 'flex', justifyContent: 'center', margin: '4px 0 2px' }}>
@@ -305,7 +305,7 @@ export default function HomePage() {
         </div>
 
         {/* Finance — ring tile */}
-        <div className="home-section luma-card" style={{ ...tileStyle(theme, finColor), opacity: 0, ...dim('finance') }}
+        <div className="home-section luma-card luma-tile" style={{ ...tileStyle(theme, finColor), opacity: 0, ...dim('finance') }}
           onClick={() => router.push('/dashboard/finance')} {...hover('finance')}>
           <TileHead icon="finance" name="Money" accent={finColor} />
           <div style={{ display: 'flex', justifyContent: 'center', margin: '4px 0 2px' }}>
@@ -320,7 +320,7 @@ export default function HomePage() {
         </div>
 
         {/* Medications — ring tile */}
-        <div className="home-section luma-card" style={{ ...tileStyle(theme, medColor), opacity: 0, ...dim('meds') }}
+        <div className="home-section luma-card luma-tile" style={{ ...tileStyle(theme, medColor), opacity: 0, ...dim('meds') }}
           onClick={() => router.push('/dashboard/meds')} {...hover('meds')}>
           <TileHead icon="meds" name="Meds" accent={medColor} />
           {pillsTotal === 0 ? (
@@ -345,7 +345,7 @@ export default function HomePage() {
         </div>
 
         {/* Movement — compact tile */}
-        <div className="home-section luma-card" style={{ ...tileStyle(theme, theme.accent), opacity: 0, ...dim('exercise') }}
+        <div className="home-section luma-card luma-tile" style={{ ...tileStyle(theme, theme.accent), opacity: 0, ...dim('exercise') }}
           onClick={() => router.push('/dashboard/exercise')} {...hover('exercise')}>
           <TileHead icon="move" name="Move" accent={theme.accent} />
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, margin: '6px 0 2px' }}>

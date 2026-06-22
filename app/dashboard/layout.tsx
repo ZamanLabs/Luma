@@ -6,6 +6,7 @@ import { useTheme } from '../ThemeContext'
 import { themes } from '../theme'
 import { createClient } from '@/utils/supabase/client'
 import { FONT_IMPORT, GLOBAL_CSS, Icon, ProfileMenuContext, serif, sans } from './ui'
+import Cursor from './Cursor'
 
 const tabs = [
   { id: 'home',      icon: 'home',      label: 'Home',    path: '/dashboard/home'      },
@@ -35,6 +36,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false) }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // Cursor-tracking spotlight + subtle magnetic tilt on interactive tiles.
+  useEffect(() => {
+    if (!window.matchMedia('(pointer: fine)').matches) return
+    const tilt = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    let cur: HTMLElement | null = null
+    const reset = (el: HTMLElement | null) => { if (el) { el.style.transform = ''; el.style.removeProperty('--mx'); el.style.removeProperty('--my') } }
+    const onMove = (e: PointerEvent) => {
+      const tile = (e.target as HTMLElement)?.closest?.('.luma-tile') as HTMLElement | null
+      if (cur && cur !== tile) reset(cur)
+      cur = tile
+      if (!tile) return
+      const r = tile.getBoundingClientRect()
+      const px = (e.clientX - r.left) / r.width, py = (e.clientY - r.top) / r.height
+      tile.style.setProperty('--mx', px * 100 + '%')
+      tile.style.setProperty('--my', py * 100 + '%')
+      if (tilt) tile.style.transform = `perspective(900px) rotateX(${(0.5 - py) * 7}deg) rotateY(${(px - 0.5) * 7}deg) translateZ(0)`
+    }
+    const onOut = () => { reset(cur); cur = null }
+    window.addEventListener('pointermove', onMove, { passive: true })
+    document.addEventListener('mouseleave', onOut)
+    return () => { reset(cur); window.removeEventListener('pointermove', onMove); document.removeEventListener('mouseleave', onOut) }
   }, [])
 
   const signOut = async () => {
@@ -73,6 +97,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <ProfileMenuContext.Provider value={() => setMenuOpen(true)}>
     <div style={{ ...cssVars, minHeight: '100vh', background: theme.bg, color: theme.txt, fontFamily: sans, position: 'relative' }}>
       <style>{FONT_IMPORT + GLOBAL_CSS}</style>
+      <Cursor accent={theme.accent} />
 
       {/* Signature ambient — a slow aurora that drifts and shifts with the
           time of day (warm at dawn, cool at night), tinted to the theme. */}

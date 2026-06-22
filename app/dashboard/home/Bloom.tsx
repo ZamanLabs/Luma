@@ -55,6 +55,13 @@ export default function Bloom({ input, height = 320 }: { input: BloomInput; heig
     const jit = Array.from({ length: 48 }, () => rnd())
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
+    // The bloom leans toward the cursor — the login spotlight, brought into the hero.
+    const ptr = { x: 0, y: 0, active: false }
+    const lean = { x: 0, y: 0 }
+    const onPtr = (e: PointerEvent) => { const r = canvas.getBoundingClientRect(); ptr.x = e.clientX - r.left - W / 2; ptr.y = e.clientY - r.top - H / 2; ptr.active = true }
+    const onPtrLeave = () => { ptr.active = false }
+    if (!reduce) { wrap.addEventListener('pointermove', onPtr, { passive: true }); wrap.addEventListener('pointerleave', onPtrLeave) }
+
     const t0 = performance.now()
     let raf = 0
 
@@ -76,7 +83,10 @@ export default function Bloom({ input, height = 320 }: { input: BloomInput; heig
       ].join(',')
       const amberCol = am.join(',')
 
-      const cx = W / 2, cy = H / 2
+      const tx = ptr.active ? Math.max(-32, Math.min(32, ptr.x * 0.13)) : 0
+      const ty = ptr.active ? Math.max(-24, Math.min(24, ptr.y * 0.13)) : 0
+      lean.x += (tx - lean.x) * 0.06; lean.y += (ty - lean.y) * 0.06
+      const cx = W / 2 + lean.x, cy = H / 2 + lean.y
       const R = Math.min(W, H)
       ctx.clearRect(0, 0, W, H)
       ctx.globalCompositeOperation = 'lighter'
@@ -150,7 +160,10 @@ export default function Bloom({ input, height = 320 }: { input: BloomInput; heig
       raf = requestAnimationFrame(draw)
     }
 
-    return () => { cancelAnimationFrame(raf); ro.disconnect() }
+    return () => {
+      cancelAnimationFrame(raf); ro.disconnect()
+      wrap.removeEventListener('pointermove', onPtr); wrap.removeEventListener('pointerleave', onPtrLeave)
+    }
   }, [height, input.seed])
 
   return <div ref={wrapRef} style={{ width: '100%', height }}><canvas ref={canvasRef} /></div>
