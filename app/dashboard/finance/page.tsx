@@ -123,16 +123,20 @@ export default function FinancePage() {
     init()
   }, [supabase, viewMonth, loadData])
 
-  const addExpense = async () => {
-    if (!name.trim() || !amount || !userId) return
+  const logExpense = async (expName: string, amt: number, cat: string) => {
+    if (!expName.trim() || !amt || !userId) return
     const now = Date.now()
-    const entry = { user_id: userId, name: name.trim(), amount: parseFloat(amount), category, date: todayStr(), updated_at: now, created_at: now }
+    const entry = { user_id: userId, name: expName.trim(), amount: amt, category: cat, date: todayStr(), updated_at: now, created_at: now }
     const { data } = await supabase.from('expenses').insert(entry).select().single()
     if (data) {
       const next = [data, ...expenses]
       setExpenses(next)
       adjustWeek(data.date, data.amount, next)
     }
+  }
+
+  const addExpense = async () => {
+    await logExpense(name, parseFloat(amount), category)
     setName(''); setAmount('')
   }
 
@@ -168,6 +172,15 @@ export default function FinancePage() {
   const pct = Math.min(100, Math.round(totalSpent / budget * 100))
   const over = moneyLeft < 0
   const byCategory = CATS.map(cat => ({ cat, amt: expenses.filter(e => e.category === cat).reduce((s, e) => s + e.amount, 0) })).filter(c => c.amt > 0)
+
+  // Recent distinct expenses → quick-add chips (re-log a recurring spend in one tap).
+  const frequent: { name: string; amount: number; category: string }[] = []
+  const seen = new Set<string>()
+  for (const e of expenses) {
+    const k = e.name.toLowerCase()
+    if (!seen.has(k)) { seen.add(k); frequent.push({ name: e.name, amount: e.amount, category: e.category }) }
+    if (frequent.length >= 6) break
+  }
 
   const s = styles(theme)
   const inp = s.input
@@ -263,6 +276,23 @@ export default function FinancePage() {
       {isCurrentMonth && (
         <div ref={formRef} className="luma-card" style={{ ...s.card, opacity: 0 }}>
           <CardLabel t={theme}>Add Expense</CardLabel>
+
+          {frequent.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ ...s.label, fontSize: 9, color: theme.sub, marginBottom: 9 }}>Recent — tap to add again</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                {frequent.map(f => (
+                  <button key={f.name} className="luma-btn" onClick={() => logExpense(f.name, f.amount, f.category)} title={`Add ${f.name} · ৳${f.amount}`}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 7, maxWidth: 210, background: theme.c2, border: `1px solid ${theme.border}`, borderRadius: 999, padding: '7px 12px', cursor: 'pointer', fontFamily: sans, fontSize: 12.5, color: theme.txt }}>
+                    <span style={{ width: 7, height: 7, borderRadius: 999, background: CAT_COLORS[f.category], flexShrink: 0 }} />
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                    <span style={{ color: theme.accent, fontFamily: serif, fontSize: 14, fontVariantNumeric: 'tabular-nums' }}>৳{f.amount.toLocaleString()}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <input className="luma-input" value={name} onChange={e => setName(e.target.value)} placeholder="What did you spend on?"
             style={{ ...inp, width: '100%', marginBottom: 10, boxSizing: 'border-box' }} />
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>

@@ -12,9 +12,17 @@ type Day = { date: string; value: number }
 type Cache = { acts: ExerciseLog[]; week: Day[] }
 
 const EX_TYPES = ['🚶 Walk', '🏃 Jog', '🏋️ Gym', '🚴 Cycling', '🧘 Yoga', '🏊 Swim', '⚽ Sport', 'Other']
+const PRESETS: { type: string; mins: number }[] = [
+  { type: '🚶 Walk', mins: 30 },
+  { type: '🏃 Jog', mins: 20 },
+  { type: '🏋️ Gym', mins: 45 },
+  { type: '🚴 Cycling', mins: 30 },
+  { type: '🧘 Yoga', mins: 20 },
+]
 const todayStr = () => new Date().toISOString().slice(0, 10)
 const timeNow = () => new Date().toTimeString().slice(0, 5)
 const fmtDate = (d: string) => new Date(d + 'T12:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+const fmtTimer = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 
 export default function ExercisePage() {
   const supabase = createClient()
@@ -31,6 +39,9 @@ export default function ExercisePage() {
   const [dispMins, setDispMins] = useState(0)
   const [dispActs, setDispActs] = useState(0)
   const [week, setWeek] = useState<Day[]>([])
+  const [timerOn, setTimerOn] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const headerRef = useRef<HTMLDivElement>(null)
   const statsRef = useRef<HTMLDivElement>(null)
@@ -109,10 +120,10 @@ export default function ExercisePage() {
     init()
   }, [supabase, viewDate, loadData])
 
-  const addActivity = async () => {
-    if (!duration || !userId || viewDate !== todayStr()) return
+  const logActivity = async (t: string, mins: number, n: string) => {
+    if (!mins || !userId || viewDate !== todayStr()) return
     const now = Date.now()
-    const entry = { user_id: userId, type, duration_minutes: parseInt(duration), notes: notes.trim(), date: viewDate, time: timeNow(), updated_at: now, created_at: now }
+    const entry = { user_id: userId, type: t, duration_minutes: Math.round(mins), notes: n.trim(), date: viewDate, time: timeNow(), updated_at: now, created_at: now }
     const { data } = await supabase.from('exercise_logs').insert(entry).select().single()
     if (data) {
       const next = [...acts, data]
@@ -121,8 +132,31 @@ export default function ExercisePage() {
       setDispActs(prev => prev + 1)
       adjustWeek(data.date, data.duration_minutes, next)
     }
+  }
+
+  const addActivity = async () => {
+    await logActivity(type, parseInt(duration), notes)
     setDuration(''); setNotes('')
   }
+
+  // Start/stop timer — logs the selected activity type with the elapsed minutes.
+  const startTimer = () => {
+    setTimerOn(true); setElapsed(0)
+    if (timerRef.current) clearInterval(timerRef.current)
+    const start = Date.now()
+    timerRef.current = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000)
+  }
+  const stopTimer = async () => {
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+    const mins = Math.max(1, Math.round(elapsed / 60))
+    setTimerOn(false); setElapsed(0)
+    await logActivity(type, mins, '')
+  }
+  const cancelTimer = () => {
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+    setTimerOn(false); setElapsed(0)
+  }
+  useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current) }, [])
 
   const deleteActivity = async (id: string) => {
     if (viewDate !== todayStr()) return
@@ -204,6 +238,38 @@ export default function ExercisePage() {
       {isToday && (
         <div ref={formRef} className="luma-card" style={{ ...s.card, opacity: 0 }}>
           <CardLabel t={theme}>Log Activity</CardLabel>
+
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ ...s.label, fontSize: 9, color: theme.sub, marginBottom: 9 }}>Quick log — tap to add</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+              {PRESETS.map(p => (
+                <button key={p.type} className="luma-btn" onClick={() => logActivity(p.type, p.mins, '')} title={`Log ${p.type} · ${p.mins} min`}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: theme.c2, border: `1px solid ${theme.border}`, borderRadius: 999, padding: '7px 12px', cursor: 'pointer', fontFamily: sans, fontSize: 12.5, color: theme.txt }}>
+                  <span>{p.type}</span>
+                  <span style={{ color: theme.accent, fontFamily: serif, fontSize: 14, fontVariantNumeric: 'tabular-nums' }}>{p.mins}m</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Timer */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, padding: '12px 14px', borderRadius: 14, background: theme.c2, border: `1px solid ${timerOn ? theme.accent : theme.border}` }}>
+            <Icon name="clock" size={18} stroke={1.8} />
+            {timerOn ? (
+              <>
+                <span style={{ fontFamily: serif, fontSize: 26, color: theme.accent, fontVariantNumeric: 'tabular-nums', minWidth: 64 }}>{fmtTimer(elapsed)}</span>
+                <span style={{ fontSize: 12, color: theme.muted, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{type}</span>
+                <button className="luma-btn" onClick={stopTimer} style={{ ...s.primaryBtn, padding: '9px 16px', fontSize: 12.5 }}>Stop &amp; log</button>
+                <button className="luma-icon-btn" onClick={cancelTimer} style={s.iconBtn}><Icon name="x" size={14} /></button>
+              </>
+            ) : (
+              <>
+                <span style={{ fontSize: 12.5, color: theme.muted, flex: 1, fontFamily: sans }}>Time a workout — logs as <span style={{ color: theme.txt }}>{type}</span></span>
+                <button className="luma-btn" onClick={startTimer} style={{ ...s.ghostBtn, borderColor: theme.accent, color: theme.accent }}>Start timer</button>
+              </>
+            )}
+          </div>
+
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
             <select className="luma-input" value={type} onChange={e => setType(e.target.value)} style={{ ...inp, flex: 1, cursor: 'pointer' }}>
               {EX_TYPES.map(t => <option key={t}>{t}</option>)}

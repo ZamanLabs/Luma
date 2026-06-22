@@ -6,10 +6,11 @@ import { useTheme } from '../../ThemeContext'
 import { animate, stagger } from 'animejs'
 import { styles, PageHeader, CardLabel, Loader, EmptyState, WeekChart, Ring, lastNDays, Icon, serif, sans } from '../ui'
 import { cacheGet, cacheSet } from '../cache'
+import { COMMON_FOODS, type FoodRef } from '../foods'
 
 type FoodLog = { id: string; name: string; calories: number; date: string; time: string }
 type Day = { date: string; value: number }
-type Cache = { foods: FoodLog[]; goal: number; week: Day[] }
+type Cache = { foods: FoodLog[]; goal: number; week: Day[]; freq: FoodRef[] }
 
 const todayStr = () => new Date().toISOString().slice(0, 10)
 const timeNow = () => new Date().toTimeString().slice(0, 5)
@@ -31,6 +32,8 @@ export default function NutritionPage() {
   const [showHistory, setShowHistory] = useState(false)
   const [dispCals, setDispCals] = useState(0)
   const [week, setWeek] = useState<Day[]>([])
+  const [frequent, setFrequent] = useState<FoodRef[]>([])
+  const [focused, setFocused] = useState(false)
 
   const headerRef = useRef<HTMLDivElement>(null)
   const cardRef = useRef<HTMLDivElement>(null)
@@ -65,17 +68,19 @@ export default function NutritionPage() {
     const key = `nutrition:${uid}:${date}`
     const cached = cacheGet<Cache>(key)
     if (cached) {
-      setCalGoal(cached.goal); setFoods(cached.foods); setWeek(cached.week); setLoading(false)
+      setCalGoal(cached.goal); setFoods(cached.foods); setWeek(cached.week); setFrequent(cached.freq || []); setLoading(false)
       runAnimations(cached.foods.reduce((s, f) => s + f.calories, 0), cached.goal, cached.foods)
     } else {
       setLoading(true)
     }
 
     const days = lastNDays(7, date)
-    const [settingsRes, logsRes, weekRes] = await Promise.all([
+    const monthAgo = lastNDays(30, todayStr())[0]
+    const [settingsRes, logsRes, weekRes, recentRes] = await Promise.all([
       supabase.from('user_settings').select('calorie_goal').eq('user_id', uid).maybeSingle(),
       supabase.from('food_logs').select('*').eq('user_id', uid).eq('date', date).order('created_at', { ascending: true }),
       supabase.from('food_logs').select('calories, date').eq('user_id', uid).gte('date', days[0]).lte('date', days[6]),
+      supabase.from('food_logs').select('name, calories').eq('user_id', uid).gte('date', monthAgo).order('created_at', { ascending: false }).limit(250),
     ])
     const goal = settingsRes.data?.calorie_goal || 2000
     const items = logsRes.data || []
@@ -83,8 +88,18 @@ export default function NutritionPage() {
     weekRes.data?.forEach((r: { calories: number; date: string }) => { byDate[r.date] = (byDate[r.date] || 0) + r.calories })
     const weekData: Day[] = days.map(d => ({ date: d, value: byDate[d] || 0 }))
 
-    cacheSet<Cache>(key, { foods: items, goal, week: weekData })
-    setCalGoal(goal); setFoods(items); setWeek(weekData)
+    // Most-logged foods from the last 30 days → quick-add chips (most recent kcal).
+    const tally = new Map<string, { kcal: number; count: number }>()
+    recentRes.data?.forEach((r: { name: string; calories: number }) => {
+      const k = r.name.trim()
+      const e = tally.get(k)
+      if (e) e.count++
+      else tally.set(k, { kcal: r.calories, count: 1 })
+    })
+    const freq: FoodRef[] = [...tally.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 8).map(([name, e]) => ({ name, kcal: e.kcal }))
+
+    cacheSet<Cache>(key, { foods: items, goal, week: weekData, freq })
+    setCalGoal(goal); setFoods(items); setWeek(weekData); setFrequent(freq)
     const cals = items.reduce((s, f) => s + f.calories, 0)
     const changed = !cached || items.length !== cached.foods.length || items.some((f, i) => f.id !== cached.foods[i]?.id)
     setLoading(false)
@@ -106,10 +121,10 @@ export default function NutritionPage() {
     init()
   }, [supabase, viewDate, loadData])
 
-  const addFood = async () => {
-    if (!name.trim() || !calories || !userId || viewDate !== todayStr()) return
+  const logFood = async (foodName: string, kcal: number) => {
+    if (!foodName.trim() || !kcal || !userId || viewDate !== todayStr()) return
     const now = Date.now()
-    const entry = { user_id: userId, name: name.trim(), calories: parseInt(calories), date: viewDate, time: timeNow(), updated_at: now, created_at: now }
+    const entry = { user_id: userId, name: foodName.trim(), calories: Math.round(kcal), date: viewDate, time: timeNow(), updated_at: now, created_at: now }
     const { data } = await supabase.from('food_logs').insert(entry).select().single()
     if (data) {
       const updated = [...foods, data]
@@ -122,8 +137,21 @@ export default function NutritionPage() {
         animate(barRef.current, { width: [`${Math.min(100, Math.round((total - data.calories) / calGoal * 100))}%`, `${pct}%`], duration: 600, ease: 'outExpo' })
       }
     }
-    setName(''); setCalories('')
   }
+
+  const addFood = async () => {
+    await logFood(name, parseInt(calories))
+    setName(''); setCalories(''); setFocused(false)
+  }
+
+  // Quick-add suggestions while typing: your recents first, then the built-in list.
+  const q = name.trim().toLowerCase()
+  const suggestions: FoodRef[] = q.length >= 1
+    ? [
+        ...frequent.filter(f => f.name.toLowerCase().includes(q)),
+        ...COMMON_FOODS.filter(f => f.name.toLowerCase().includes(q) && !frequent.some(fr => fr.name.toLowerCase() === f.name.toLowerCase())),
+      ].slice(0, 6)
+    : []
 
   const deleteFood = async (id: string) => {
     if (viewDate !== todayStr()) return
@@ -139,7 +167,7 @@ export default function NutritionPage() {
   const syncWeekToday = (items: FoodLog[], total: number) => {
     const next = week.map(d => d.date === viewDate ? { ...d, value: total } : d)
     setWeek(next)
-    if (userId) cacheSet<Cache>(`nutrition:${userId}:${viewDate}`, { foods: items, goal: calGoal, week: next })
+    if (userId) cacheSet<Cache>(`nutrition:${userId}:${viewDate}`, { foods: items, goal: calGoal, week: next, freq: frequent })
   }
 
   const saveGoal = async () => {
@@ -234,8 +262,50 @@ export default function NutritionPage() {
       {isToday && (
         <div ref={formRef} className="luma-card" style={{ ...s.card, opacity: 0 }}>
           <CardLabel t={theme}>Log Meal</CardLabel>
-          <input className="luma-input" value={name} onChange={e => setName(e.target.value)} placeholder="Food or meal name" onKeyDown={e => e.key === 'Enter' && addFood()}
-            style={{ ...inp, width: '100%', marginBottom: 10, boxSizing: 'border-box' }} />
+
+          {frequent.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ ...s.label, fontSize: 9, color: theme.sub, marginBottom: 9 }}>Frequent — tap to add</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                {frequent.map(f => (
+                  <button key={f.name} className="luma-btn" onClick={() => logFood(f.name, f.kcal)} title={`Add ${f.name} · ${f.kcal} kcal`}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: 200, background: theme.c2, border: `1px solid ${theme.border}`, borderRadius: 999, padding: '7px 12px', cursor: 'pointer', fontFamily: sans, fontSize: 12.5, color: theme.txt }}>
+                    <Icon name="plus" size={12} stroke={2.4} />
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                    <span style={{ color: theme.accent, fontFamily: serif, fontSize: 14, fontVariantNumeric: 'tabular-nums' }}>{f.kcal}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={{ position: 'relative', marginBottom: 10 }}>
+            <input className="luma-input" value={name}
+              onChange={e => setName(e.target.value)}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setTimeout(() => setFocused(false), 120)}
+              placeholder="Search a food, or type your own"
+              onKeyDown={e => e.key === 'Enter' && addFood()}
+              style={{ ...inp, width: '100%', boxSizing: 'border-box' }} />
+            {focused && suggestions.length > 0 && (
+              <div style={{
+                position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 5,
+                background: theme.c1, border: `1px solid ${theme.border}`, borderRadius: 12, overflow: 'hidden',
+                boxShadow: `0 16px 40px -16px rgba(0,0,0,0.55)`,
+              }}>
+                {suggestions.map((sug, i) => (
+                  <div key={sug.name} onMouseDown={() => { logFood(sug.name, sug.kcal); setName(''); setFocused(false) }}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 13px', cursor: 'pointer', borderTop: i > 0 ? `1px solid ${theme.border}` : 'none', background: 'transparent' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = theme.c2)}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                    <span style={{ fontSize: 13.5, color: theme.txt, fontFamily: sans, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sug.name}</span>
+                    <span style={{ flexShrink: 0, fontFamily: serif, fontSize: 15, color: theme.accent, fontVariantNumeric: 'tabular-nums' }}>{sug.kcal} <span style={{ fontFamily: sans, fontSize: 10, color: theme.sub }}>kcal</span></span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div style={{ display: 'flex', gap: 8 }}>
             <input className="luma-input" value={calories} onChange={e => setCalories(e.target.value)} type="number" placeholder="Calories (kcal)" onKeyDown={e => e.key === 'Enter' && addFood()}
               style={{ ...inp, flex: 1 }} />
