@@ -69,6 +69,20 @@ Current reminders only fire while a tab is open — half a feature for a med tra
 
 ---
 
+## 📱 Ship as a mobile app  ·  _deferred: do this LAST, after the improvements_
+
+Decision: build the rest of the product first, then package for phones. Recommended
+path is **PWA first** (reuses everything), Capacitor only if store listings are wanted.
+
+- [ ] **PWA** — `manifest.ts`, app icons (192/512 + maskable + apple-touch), `theme-color`
+  and `apple-mobile-web-app-*` meta, `viewport-fit=cover`, a safe service worker
+  (network-first; never cache Supabase/auth) so it installs to the home screen,
+  launches fullscreen, and works offline
+- [ ] **Push notifications** via the PWA — this is also what unlocks closed-app med reminders
+- [ ] (Optional, later) **Capacitor** wrap for App Store / Play Store — needs OAuth deep-link
+  handling, native push, an Apple Developer account ($99/yr) + Play Console ($25)
+- [ ] Skip React Native — a full native rewrite isn't worth throwing away this UI
+
 ## ♿ Accessibility
 
 - [ ] Audit contrast on micro-labels (10px uppercase `sub`/`muted` text fails WCAG in places)
