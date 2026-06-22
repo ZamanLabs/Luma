@@ -229,12 +229,13 @@ export default function HomePage() {
   const entries = foodCount + expenseToday + actCount + pillsDoneCount
   const onTrackScore = ((calLeft >= 0 ? 1 : 0) + (moneyLeft >= 0 ? 1 : 0) + (pillsTotal === 0 ? 1 : pillsDoneCount / pillsTotal)) / 3
   const bloomInput: BloomInput = {
-    growth: Math.max(0.05, Math.min(1, entries / 8)),
+    growth: Math.max(0.26, Math.min(1, entries / 8)),
     warmth: onTrackScore,
     motion: Math.min(1, totalMins / 60),
-    petals: 7 + Math.min(24, entries * 2),
+    petals: 11 + Math.min(20, entries * 2),
     seed: parseInt(todayStr().replace(/-/g, ''), 10) % 2147483647,
-    green: theme.green, amber: theme.accent, off: theme.red, particle: theme.purple,
+    // Warmth is a fixed gold so "on track" always reads warm, even on cool/light themes.
+    green: theme.green, amber: '#e8a53a', off: theme.red, particle: theme.purple,
   }
   const tended = `${entries} ${entries === 1 ? 'thing' : 'things'} tended today`
 

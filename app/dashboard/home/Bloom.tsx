@@ -81,16 +81,18 @@ export default function Bloom({ input, height = 320 }: { input: BloomInput; heig
       ctx.clearRect(0, 0, W, H)
       ctx.globalCompositeOperation = 'lighter'
 
-      const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 0.55)
-      halo.addColorStop(0, `rgba(${amberCol},${(0.04 + v * 0.11) * warm})`)
-      halo.addColorStop(0.5, `rgba(${petalCol},${0.03 + v * 0.05})`)
+      // Glow field — fills the whole stage so the void reads as a lit room, not black.
+      const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.hypot(W, H) * 0.55)
+      halo.addColorStop(0, `rgba(${amberCol},${(0.10 + v * 0.12) * (0.4 + warm * 0.6)})`)
+      halo.addColorStop(0.35, `rgba(${petalCol},${0.05 + v * 0.05})`)
+      halo.addColorStop(0.75, `rgba(${petalCol},0.02)`)
       halo.addColorStop(1, 'rgba(0,0,0,0)')
       ctx.fillStyle = halo; ctx.fillRect(0, 0, W, H)
 
       const tremor = reduce ? 0 : restless * (Math.sin(t * 9) * 0.5 + Math.sin(t * 13.7) * 0.5) * 7
       const breathe = reduce ? 1 : 1 + Math.sin(t * 0.9) * 0.022
       const rot = reduce ? 0 : t * (0.05 + mo * 0.13)
-      const maxLen = R * 0.34
+      const maxLen = R * 0.4
       const petals = Math.max(6, Math.round(tg.petals))
 
       for (let layer = 3; layer >= 0; layer--) {
@@ -116,14 +118,14 @@ export default function Bloom({ input, height = 320 }: { input: BloomInput; heig
         }
       }
 
-      const coreR = (10 + v * 18) * breathe
-      const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR * 2.6)
-      core.addColorStop(0, `rgba(255,240,210,${0.42 + v * 0.42})`)
-      core.addColorStop(0.4, `rgba(${amberCol},${(0.25 + v * 0.25) * warm + 0.08})`)
+      const coreR = (15 + v * 18) * breathe
+      const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR * 2.8)
+      core.addColorStop(0, `rgba(255,242,214,${0.6 + v * 0.35})`)
+      core.addColorStop(0.4, `rgba(${amberCol},${(0.3 + v * 0.25) * (0.5 + warm * 0.5) + 0.1})`)
       core.addColorStop(1, `rgba(${amberCol},0)`)
-      ctx.fillStyle = core; ctx.beginPath(); ctx.arc(cx, cy, coreR * 2.6, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = core; ctx.beginPath(); ctx.arc(cx, cy, coreR * 2.8, 0, Math.PI * 2); ctx.fill()
 
-      const pcount = Math.round(v * parts.length)
+      const pcount = Math.round(Math.max(0.18, v) * parts.length)
       for (let i = 0; i < pcount; i++) {
         const p = parts[i]
         const orbit = R * 0.16 + p.r * R * 0.33
