@@ -1,13 +1,14 @@
 'use client'
 
 import { usePathname, useRouter } from 'next/navigation'
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useTheme } from '../ThemeContext'
 import { themes } from '../theme'
 import { createClient } from '@/utils/supabase/client'
 import { FONT_IMPORT, GLOBAL_CSS, Icon, ProfileMenuContext, serif, sans } from './ui'
 import Cursor from './Cursor'
 import { ToastProvider } from './Toast'
+import Ember from './Ember'
 
 const tabs = [
   { id: 'home',      icon: 'home',      label: 'Home',    path: '/dashboard/home'      },
@@ -37,6 +38,28 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false) }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // Aurora as a living depth layer — drifts with cursor + scroll (parallax).
+  const aur1 = useRef<HTMLDivElement>(null)
+  const aur2 = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const st = { tx: 0, ty: 0, cx: 0, cy: 0 }
+    const onMove = (e: PointerEvent) => { st.tx = e.clientX / window.innerWidth - 0.5; st.ty = e.clientY / window.innerHeight - 0.5 }
+    let raf = 0
+    const loop = () => {
+      st.cx += (st.tx - st.cx) * 0.05; st.cy += (st.ty - st.cy) * 0.05
+      const sy = window.scrollY || 0
+      if (aur1.current) aur1.current.style.transform = `translate(${st.cx * 38}px, ${st.cy * 28 + sy * 0.05}px)`
+      if (aur2.current) aur2.current.style.transform = `translate(${st.cx * -28}px, ${st.cy * -20 - sy * 0.035}px)`
+      if (!document.hidden) raf = requestAnimationFrame(loop)
+    }
+    window.addEventListener('pointermove', onMove, { passive: true })
+    raf = requestAnimationFrame(loop)
+    const onVis = () => { if (!document.hidden) { cancelAnimationFrame(raf); raf = requestAnimationFrame(loop) } }
+    document.addEventListener('visibilitychange', onVis)
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('pointermove', onMove); document.removeEventListener('visibilitychange', onVis) }
   }, [])
 
   // Cursor-tracking spotlight + subtle magnetic tilt on interactive tiles.
@@ -103,16 +126,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Signature ambient — a slow aurora that drifts and shifts with the
           time of day (warm at dawn, cool at night), tinted to the theme. */}
       <div style={{ position: 'fixed', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: 0 }}>
-        <div className="luma-ambient" style={{
-          position: 'absolute', top: '-25%', left: '-15%', width: '75vw', height: '75vw', borderRadius: '50%',
-          background: `radial-gradient(circle, color-mix(in srgb, ${aurora[0]} ${auroraStrength}%, transparent), transparent 62%)`,
-          filter: 'blur(72px)', animation: 'lumaAurora1 26s ease-in-out infinite',
-        }} />
-        <div className="luma-ambient" style={{
-          position: 'absolute', top: '15%', right: '-20%', width: '70vw', height: '70vw', borderRadius: '50%',
-          background: `radial-gradient(circle, color-mix(in srgb, ${aurora[1]} ${auroraStrength}%, transparent), transparent 62%)`,
-          filter: 'blur(80px)', animation: 'lumaAurora2 34s ease-in-out infinite',
-        }} />
+        <div ref={aur1} style={{ position: 'absolute', inset: 0, willChange: 'transform' }}>
+          <div className="luma-ambient" style={{
+            position: 'absolute', top: '-25%', left: '-15%', width: '75vw', height: '75vw', borderRadius: '50%',
+            background: `radial-gradient(circle, color-mix(in srgb, ${aurora[0]} ${auroraStrength}%, transparent), transparent 62%)`,
+            filter: 'blur(72px)', animation: 'lumaAurora1 26s ease-in-out infinite',
+          }} />
+        </div>
+        <div ref={aur2} style={{ position: 'absolute', inset: 0, willChange: 'transform' }}>
+          <div className="luma-ambient" style={{
+            position: 'absolute', top: '15%', right: '-20%', width: '70vw', height: '70vw', borderRadius: '50%',
+            background: `radial-gradient(circle, color-mix(in srgb, ${aurora[1]} ${auroraStrength}%, transparent), transparent 62%)`,
+            filter: 'blur(80px)', animation: 'lumaAurora2 34s ease-in-out infinite',
+          }} />
+        </div>
         <div style={{
           position: 'absolute', inset: 0, opacity: 0.5,
           backgroundImage: 'radial-gradient(circle, color-mix(in srgb, currentColor 5%, transparent) 1px, transparent 1px)',
@@ -132,7 +159,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         WebkitBackdropFilter: 'blur(18px) saturate(1.2)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 12px', marginBottom: 34 }}>
-          <span style={{ ...avatarStyle(34), borderRadius: 11 }}>L</span>
+          <div style={{
+            width: 34, height: 34, borderRadius: 11, overflow: 'hidden', flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'radial-gradient(circle at 50% 45%, #14110b, #070605)',
+            border: `1px solid color-mix(in srgb, ${theme.accent} 30%, ${theme.border})`,
+          }}>
+            <Ember size={34} />
+          </div>
           <span style={{ fontFamily: serif, fontSize: 26, color: theme.txt, letterSpacing: '-0.01em' }}>Luma</span>
         </div>
         {tabs.map(tab => {
