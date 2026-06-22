@@ -107,6 +107,16 @@ export const GLOBAL_CSS = `
 .luma-link { transition: color .2s ease, opacity .2s ease; }
 .luma-link:hover { opacity: 1 !important; color: var(--accent) !important; }
 
+.luma-md h1 { font-size: 28px; font-weight: 500; margin: 10px 0 6px; }
+.luma-md h2 { font-size: 23px; font-weight: 500; margin: 10px 0 6px; }
+.luma-md h3 { font-size: 19px; font-weight: 500; margin: 8px 0 4px; color: var(--accent); }
+.luma-md p { margin: 0 0 2px; }
+.luma-md ul { margin: 6px 0; padding-left: 22px; }
+.luma-md li { margin: 3px 0; }
+.luma-md strong { font-weight: 600; }
+.luma-md em { font-style: italic; }
+.luma-md code { font-family: monospace; background: var(--c2); padding: 1px 6px; border-radius: 5px; font-size: .82em; }
+
 @media (prefers-reduced-motion: reduce) {
   .luma-ambient { animation: none !important; }
 }
@@ -186,6 +196,8 @@ const ICONS: Record<string, ReactNode> = {
   bellOff: <><path d="M8.7 4.2A6 6 0 0 1 18 8.5c0 2.6.5 4.3 1 5.4M5.4 9.9C5.7 13.6 4 15.5 4 15.5h12M10 20a2 2 0 0 0 4 0" /><path d="M3 3l18 18" /></>,
   trend: <><path d="M3 17l6-6 4 4 7-7" /><path d="M17 7h4v4" /></>,
   utensils: <><path d="M6 3v8a2 2 0 0 0 4 0V3" /><path d="M8 11v10" /><path d="M16 3c-1.5 0-2.5 2-2.5 5s1 4 2.5 4v9" /></>,
+  search: <><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.2-4.2" /></>,
+  eye: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></>,
 }
 
 export function Icon({
