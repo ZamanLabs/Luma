@@ -138,13 +138,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {tabs.map(tab => {
           const active = pathname.startsWith(tab.path)
           return (
-            <button key={tab.id} className="luma-side-tab" onClick={() => router.push(tab.path)} style={{
+            <button key={tab.id} className={`luma-side-tab${active ? ' is-active' : ''}`} onClick={() => router.push(tab.path)} style={{
               display: 'flex', alignItems: 'center', gap: 13, width: '100%',
               border: 'none', cursor: 'pointer', textAlign: 'left',
               padding: '11px 14px', marginBottom: 3, borderRadius: 12,
-              fontFamily: sans, fontSize: 14, fontWeight: active ? 600 : 400,
-              color: active ? theme.accent : theme.muted,
-              background: active ? `color-mix(in srgb, ${theme.accent} 14%, transparent)` : 'transparent',
+              fontFamily: sans, fontSize: 14,
             }}>
               <Icon name={tab.icon} size={20} stroke={active ? 1.9 : 1.6} />
               {tab.label}
@@ -156,7 +154,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <button className="luma-side-tab" onClick={() => setMenuOpen(true)} style={{
           marginTop: 'auto', display: 'flex', alignItems: 'center', gap: 11, width: '100%',
           border: `1px solid ${theme.border}`, cursor: 'pointer', textAlign: 'left',
-          padding: '10px 12px', borderRadius: 14, background: 'transparent', fontFamily: sans,
+          padding: '10px 12px', borderRadius: 14, fontFamily: sans,
         }}>
           <span style={avatarStyle(32)}>{initial}</span>
           <span style={{ minWidth: 0, flex: 1 }}>
@@ -184,20 +182,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {tabs.map(tab => {
           const active = pathname.startsWith(tab.path)
           return (
-            <button key={tab.id} className="luma-tab" onClick={() => router.push(tab.path)} style={{
+            <button key={tab.id} className={`luma-tab${active ? ' is-active' : ''}`} onClick={() => router.push(tab.path)} style={{
               position: 'relative', background: 'transparent', border: 'none', cursor: 'pointer',
               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
-              padding: '7px 10px 5px', flex: '0 1 60px', color: active ? theme.accent : theme.muted, fontFamily: sans,
+              padding: '7px 10px 5px', flex: '0 1 60px', fontFamily: sans,
             }}>
-              <span className="luma-tab-pill" style={{
-                position: 'absolute', top: 0, width: 38, height: 30, borderRadius: 10,
-                background: active ? `color-mix(in srgb, ${theme.accent} 16%, transparent)` : 'transparent',
-                transform: active ? 'scale(1)' : 'scale(0.7)', opacity: active ? 1 : 0,
-              }} />
+              <span className="luma-tab-pill" style={{ position: 'absolute', top: 0, width: 38, height: 30, borderRadius: 10 }} />
               <span style={{ position: 'relative', display: 'flex' }}>
                 <Icon name={tab.icon} size={21} stroke={active ? 1.9 : 1.6} />
               </span>
-              <span style={{ position: 'relative', fontSize: 9.5, fontWeight: active ? 600 : 500, letterSpacing: '0.04em', color: active ? theme.accent : theme.sub }}>
+              <span className="luma-tab-label" style={{ position: 'relative', fontSize: 9.5, letterSpacing: '0.04em' }}>
                 {tab.label}
               </span>
             </button>
@@ -205,12 +199,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         })}
         {/* Profile button */}
         <button className="luma-tab" onClick={() => setMenuOpen(true)} style={{
-          background: 'transparent', border: 'none', cursor: 'pointer',
+          position: 'relative', background: 'transparent', border: 'none', cursor: 'pointer',
           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
           padding: '7px 10px 5px', flex: '0 1 60px', fontFamily: sans,
         }}>
-          <span style={{ ...avatarStyle(22), fontSize: 11 }}>{initial}</span>
-          <span style={{ fontSize: 9.5, fontWeight: 500, letterSpacing: '0.04em', color: theme.sub }}>You</span>
+          <span className="luma-tab-pill" style={{ position: 'absolute', top: 0, width: 38, height: 30, borderRadius: 10 }} />
+          <span style={{ position: 'relative', ...avatarStyle(22), fontSize: 11 }}>{initial}</span>
+          <span className="luma-tab-label" style={{ position: 'relative', fontSize: 9.5, letterSpacing: '0.04em' }}>You</span>
         </button>
       </nav>
 

@@ -90,8 +90,19 @@ export const GLOBAL_CSS = `
 .luma-row:hover .luma-del { opacity: 1; }
 .luma-del:hover { color: var(--red) !important; background: color-mix(in srgb, var(--red) 14%, transparent) !important; }
 
-.luma-tab { transition: color .25s ease; }
-.luma-tab .luma-tab-pill { transition: background .25s ease, transform .25s ease, opacity .25s ease; }
+.luma-tab { color: var(--muted); transition: color .2s ease; }
+.luma-tab .luma-tab-pill {
+  opacity: 0; transform: scale(.7); background: transparent;
+  transition: background .25s ease, transform .25s ease, opacity .25s ease;
+}
+.luma-tab .luma-tab-label { color: var(--sub); transition: color .2s ease; }
+.luma-tab:hover { color: var(--txt); }
+.luma-tab:hover .luma-tab-label { color: var(--txt); }
+.luma-tab:hover .luma-tab-pill { opacity: 1; transform: scale(1); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.luma-tab:active .luma-tab-pill { transform: scale(.92); }
+.luma-tab.is-active { color: var(--accent); }
+.luma-tab.is-active .luma-tab-label { color: var(--accent); font-weight: 600; }
+.luma-tab.is-active .luma-tab-pill { opacity: 1; transform: scale(1); background: color-mix(in srgb, var(--accent) 16%, transparent); }
 
 .luma-link { transition: color .2s ease, opacity .2s ease; }
 .luma-link:hover { opacity: 1 !important; color: var(--accent) !important; }
@@ -120,8 +131,11 @@ export const GLOBAL_CSS = `
 .b-span2 { grid-column: span 2; }
 .b-wide { grid-column: span 2; }
 
-.luma-side-tab { transition: background .2s ease, color .2s ease; }
-.luma-side-tab:hover { background: var(--c2); color: var(--txt); }
+.luma-side-tab { color: var(--muted); background: transparent; transition: background .2s ease, color .2s ease, transform .18s ease; }
+.luma-side-tab:hover { background: var(--c2); color: var(--txt); transform: translateX(3px); }
+.luma-side-tab:active { transform: translateX(1px) scale(.99); }
+.luma-side-tab.is-active { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); font-weight: 600; }
+.luma-side-tab.is-active:hover { transform: none; }
 
 @media (min-width: 920px) {
   .luma-bottom-nav { display: none !important; }
