@@ -29,7 +29,11 @@ export async function proxy(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
-  if (!user && !request.nextUrl.pathname.startsWith('/login')) {
+  const path = request.nextUrl.pathname
+  // Never gate the OAuth callback — it must run to exchange the code for a session.
+  const isPublic = path.startsWith('/login') || path.startsWith('/auth')
+
+  if (!user && !isPublic) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
