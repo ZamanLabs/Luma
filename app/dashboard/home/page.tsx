@@ -8,13 +8,14 @@ import { animate, stagger } from 'animejs'
 import { Icon, Ring, WeekChart, tileStyle, lastNDays, useProfileMenu, serif, sans } from '../ui'
 import { cacheGet, cacheSet } from '../cache'
 import WeeklyReview from './WeeklyReview'
+import Bloom, { type BloomInput } from './Bloom'
 
 type Pill = { id: string; name: string; scheduled_time: string }
 type Day = { date: string; value: number }
 type Snapshot = {
   name: string; cg: number; bg: number; cals: number; spent: number
   mins: number; actsCount: number; pills: Pill[]; taken: string[]
-  week: Day[]; weekCals: Day[]
+  week: Day[]; weekCals: Day[]; foodCount: number; expenseToday: number
 }
 
 const todayStr = () => new Date().toISOString().slice(0, 10)
@@ -55,6 +56,8 @@ export default function HomePage() {
   const [hovered, setHovered] = useState<string | null>(null)
   const [week, setWeek] = useState<Day[]>([])
   const [weekCals, setWeekCals] = useState<Day[]>([])
+  const [foodCount, setFoodCount] = useState(0)
+  const [expenseToday, setExpenseToday] = useState(0)
 
   const [dispCals, setDispCals] = useState(0)
   const [dispSpent, setDispSpent] = useState(0)
@@ -73,6 +76,7 @@ export default function HomePage() {
       setUserName(d.name); setCalGoal(d.cg); setBudget(d.bg)
       setTotalCals(d.cals); setTotalSpent(d.spent); setTotalMins(d.mins)
       setActCount(d.actsCount); setPills(d.pills); setTakenIds(d.taken); setWeek(d.week); setWeekCals(d.weekCals)
+      setFoodCount(d.foodCount); setExpenseToday(d.expenseToday)
     }
 
     const pctOf = (a: number, b: number) => Math.min(100, Math.round(a / b * 100))
@@ -118,7 +122,7 @@ export default function HomePage() {
     const [settings, foods, expenses, acts, pillData, takenData, weekActs, weekFoods] = await Promise.all([
       supabase.from('user_settings').select('calorie_goal, monthly_budget').eq('user_id', user.id).maybeSingle(),
       supabase.from('food_logs').select('calories').eq('user_id', user.id).eq('date', todayStr()),
-      supabase.from('expenses').select('amount').eq('user_id', user.id).gte('date', thisMonth() + '-01'),
+      supabase.from('expenses').select('amount, date').eq('user_id', user.id).gte('date', thisMonth() + '-01'),
       supabase.from('exercise_logs').select('duration_minutes').eq('user_id', user.id).eq('date', todayStr()),
       supabase.from('pills').select('id, name, scheduled_time').eq('user_id', user.id).order('scheduled_time', { ascending: true }),
       supabase.from('pills_taken').select('pill_id').eq('user_id', user.id).eq('date_taken', todayStr()),
@@ -143,6 +147,8 @@ export default function HomePage() {
       taken: takenData.data?.map((t: { pill_id: string }) => t.pill_id) || [],
       week: days.map(d => ({ date: d, value: minsByDate[d] || 0 })),
       weekCals: days.map(d => ({ date: d, value: calsByDate[d] || 0 })),
+      foodCount: foods.data?.length || 0,
+      expenseToday: expenses.data?.filter((e: { date: string }) => e.date === todayStr()).length || 0,
     }
 
     cacheSet('home', snap)
@@ -219,6 +225,19 @@ export default function HomePage() {
     boxShadow: `0 1px 0 color-mix(in srgb, ${theme.txt} 6%, transparent) inset, 0 16px 38px -22px rgba(0,0,0,0.32)`,
   }
 
+  // The bloom: today's data, grown into a living form.
+  const entries = foodCount + expenseToday + actCount + pillsDoneCount
+  const onTrackScore = ((calLeft >= 0 ? 1 : 0) + (moneyLeft >= 0 ? 1 : 0) + (pillsTotal === 0 ? 1 : pillsDoneCount / pillsTotal)) / 3
+  const bloomInput: BloomInput = {
+    growth: Math.max(0.05, Math.min(1, entries / 8)),
+    warmth: onTrackScore,
+    motion: Math.min(1, totalMins / 60),
+    petals: 7 + Math.min(24, entries * 2),
+    seed: parseInt(todayStr().replace(/-/g, ''), 10) % 2147483647,
+    green: theme.green, amber: theme.accent, off: theme.red, particle: theme.purple,
+  }
+  const tended = `${entries} ${entries === 1 ? 'thing' : 'things'} tended today`
+
   if (loading) return (
     <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: serif, fontSize: 26, color: theme.muted, letterSpacing: '0.04em' }}>
       <span style={{ animation: 'lumaPulse 1.8s ease-in-out infinite' }}>Luma</span>
@@ -252,41 +271,42 @@ export default function HomePage() {
 
       <div ref={sectionsRef} className="luma-bento" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 13 }}>
 
-        {/* Nutrition — HERO: big ring + headline + weekly calorie trend */}
-        <div className="home-section luma-card b-wide" style={{ ...tileStyle(theme, nutColor), opacity: 0, padding: 22, ...dim('nutrition') }}
-          onClick={() => router.push('/dashboard/nutrition')} {...hover('nutrition')}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: 10, color: nutColor, background: `color-mix(in srgb, ${nutColor} 16%, transparent)`, border: `1px solid color-mix(in srgb, ${nutColor} 26%, transparent)` }}><Icon name="nutrition" size={16} stroke={1.8} /></span>
-              <span style={label}>Nutrition · Today</span>
-            </div>
-            <span style={{ color: theme.muted, opacity: 0.45, display: 'flex' }}><Icon name="arrowRight" size={16} stroke={1.6} /></span>
+        {/* HERO — today's data, grown into a living bloom */}
+        <div className="home-section b-wide" style={{
+          position: 'relative', opacity: 0, borderRadius: 28, overflow: 'hidden',
+          background: 'radial-gradient(125% 100% at 50% 28%, #0c0a07 0%, #050403 72%)',
+          border: '1px solid rgba(255,255,255,0.07)',
+          boxShadow: '0 30px 72px -34px rgba(0,0,0,0.9), inset 0 1px 0 rgba(255,255,255,0.05)',
+        }}>
+          <Bloom input={bloomInput} height={300} />
+          <div style={{ position: 'absolute', top: 18, left: 22, right: 22, display: 'flex', justifyContent: 'space-between', alignItems: 'center', pointerEvents: 'none' }}>
+            <span style={{ ...label, color: 'rgba(240,230,214,0.62)' }}>Today, in bloom</span>
+            <span style={{ fontSize: 11, color: 'rgba(240,230,214,0.4)', fontFamily: sans }}>{tended}</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-            <Ring size={138} stroke={13} pct={calPct} color={nutColor} track={theme.c2}>
-              <span style={{ fontFamily: serif, fontSize: 36, color: theme.txt, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{dispCals.toLocaleString()}</span>
-              <span style={{ ...label, fontSize: 9, marginTop: 5 }}>kcal eaten</span>
+          <div style={{ position: 'absolute', bottom: 20, left: 24, right: 24, textAlign: 'center', pointerEvents: 'none' }}>
+            <span style={{ fontFamily: serif, fontSize: 18, fontStyle: 'italic', color: 'rgba(240,230,214,0.82)', lineHeight: 1.3 }}>{insight}</span>
+          </div>
+        </div>
+
+        {/* Nutrition — ring tile */}
+        <div className="home-section luma-card" style={{ ...tileStyle(theme, nutColor), opacity: 0, ...dim('nutrition') }}
+          onClick={() => router.push('/dashboard/nutrition')} {...hover('nutrition')}>
+          <TileHead icon="nutrition" name="Eat" accent={nutColor} />
+          <div style={{ display: 'flex', justifyContent: 'center', margin: '4px 0 2px' }}>
+            <Ring size={104} stroke={10} pct={calPct} color={nutColor} track={theme.c2}>
+              <span style={{ fontFamily: serif, fontSize: 22, color: calLeft < 0 ? theme.red : theme.txt, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{calLeft < 0 ? `+${Math.abs(calLeft).toLocaleString()}` : calLeft.toLocaleString()}</span>
+              <span style={{ ...label, fontSize: 8.5, marginTop: 4 }}>{calLeft < 0 ? 'over' : 'left'}</span>
             </Ring>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontFamily: serif, fontSize: 46, color: nutColor, lineHeight: 0.95, letterSpacing: '-0.02em' }}>
-                {calLeft < 0 ? `+${Math.abs(calLeft).toLocaleString()}` : calLeft.toLocaleString()}
-              </div>
-              <div style={{ fontSize: 13, color: theme.muted, marginTop: 7 }}>
-                {calLeft < 0 ? 'kcal over your goal' : `kcal left of ${calGoal.toLocaleString()}`}
-              </div>
-              {calSeries.some(d => d.value > 0) && (
-                <div style={{ marginTop: 18 }}>
-                  <WeekChart t={theme} color={nutColor} goal={calGoal} data={calSeries} fmt={v => Math.round(v).toLocaleString()} />
-                </div>
-              )}
-            </div>
+          </div>
+          <div style={{ fontSize: 11.5, color: theme.muted, textAlign: 'center', marginTop: 8 }}>
+            {dispCals.toLocaleString()} of {calGoal.toLocaleString()} kcal
           </div>
         </div>
 
         {/* Finance — ring tile */}
         <div className="home-section luma-card" style={{ ...tileStyle(theme, finColor), opacity: 0, ...dim('finance') }}
           onClick={() => router.push('/dashboard/finance')} {...hover('finance')}>
-          <TileHead icon="finance" name="Finance" accent={finColor} />
+          <TileHead icon="finance" name="Money" accent={finColor} />
           <div style={{ display: 'flex', justifyContent: 'center', margin: '4px 0 2px' }}>
             <Ring size={104} stroke={10} pct={budgetPct} color={finColor} track={theme.c2}>
               <span style={{ fontFamily: serif, fontSize: 20, color: moneyLeft < 0 ? theme.red : theme.txt, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>৳{Math.abs(budget - dispSpent).toLocaleString()}</span>
@@ -303,7 +323,7 @@ export default function HomePage() {
           onClick={() => router.push('/dashboard/meds')} {...hover('meds')}>
           <TileHead icon="meds" name="Meds" accent={medColor} />
           {pillsTotal === 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 138, gap: 6, color: theme.sub }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 120, gap: 6, color: theme.sub }}>
               <Icon name="meds" size={26} stroke={1.4} />
               <span style={{ fontSize: 12, fontFamily: serif, fontStyle: 'italic' }}>None scheduled</span>
             </div>
@@ -323,25 +343,28 @@ export default function HomePage() {
           )}
         </div>
 
-        {/* Movement — half-width tile with week bars */}
-        <div className="home-section luma-card b-span2" style={{ ...tileStyle(theme, theme.accent), opacity: 0, ...dim('exercise') }}
+        {/* Movement — compact tile */}
+        <div className="home-section luma-card" style={{ ...tileStyle(theme, theme.accent), opacity: 0, ...dim('exercise') }}
           onClick={() => router.push('/dashboard/exercise')} {...hover('exercise')}>
-          <TileHead icon="move" name="Movement" accent={theme.accent} />
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 22, marginBottom: week.some(d => d.value > 0) ? 18 : 0 }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-              <span style={{ fontFamily: serif, fontSize: 40, color: totalMins > 0 ? theme.txt : theme.sub, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{dispMins}</span>
-              <span style={{ fontSize: 12.5, color: theme.muted }}>min</span>
+          <TileHead icon="move" name="Move" accent={theme.accent} />
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, margin: '6px 0 2px' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+              <span style={{ fontFamily: serif, fontSize: 42, color: totalMins > 0 ? theme.txt : theme.sub, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{dispMins}</span>
+              <span style={{ fontSize: 12, color: theme.muted }}>min</span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-              <span style={{ fontFamily: serif, fontSize: 28, color: actCount > 0 ? theme.txt : theme.sub, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{dispActs}</span>
-              <span style={{ fontSize: 12.5, color: theme.muted }}>{actCount === 1 ? 'activity' : 'activities'}</span>
-            </div>
-            <div style={{ flex: 1 }} />
-            <div style={{ fontSize: 11.5, color: theme.muted, paddingBottom: 4 }}>{totalMins === 0 ? 'Nothing yet today' : `${(totalMins / 60).toFixed(1)} h total`}</div>
+            <span style={{ ...label, fontSize: 8.5, marginTop: 5 }}>{dispActs} {actCount === 1 ? 'activity' : 'activities'}</span>
           </div>
-          {week.some(d => d.value > 0) && (
-            <WeekChart t={theme} color={theme.accent} data={week} fmt={v => Math.round(v) + 'm'} />
-          )}
+          {week.some(d => d.value > 0) && (() => {
+            const max = Math.max(...week.map(x => x.value), 1)
+            return (
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 28, marginTop: 10 }}>
+                {week.map(d => {
+                  const today = d.date === todayStr()
+                  return <div key={d.date} style={{ flex: 1, height: `${Math.max(10, (d.value / max) * 100)}%`, borderRadius: 3, background: today ? theme.accent : `color-mix(in srgb, ${theme.accent} 38%, ${theme.c2})`, boxShadow: today ? `0 0 8px -1px ${theme.accent}` : 'none' }} />
+                })}
+              </div>
+            )
+          })()}
         </div>
 
         {/* Streak — "showing up" consistency band */}
