@@ -8,6 +8,7 @@ import { styles, PageHeader, CardLabel, Loader, EmptyState, WeekChart, Ring, las
 import { cacheGet, cacheSet } from '../cache'
 import { COMMON_FOODS, type FoodRef } from '../foods'
 import { useToast } from '../Toast'
+import { VT } from '../VT'
 
 type FoodLog = { id: string; name: string; calories: number; date: string; time: string }
 type Day = { date: string; value: number }
@@ -231,10 +232,12 @@ export default function NutritionPage() {
       )}
 
       <div ref={cardRef} className="luma-card" style={{ ...s.card, opacity: 0, display: 'flex', alignItems: 'center', gap: 22 }}>
-        <Ring size={128} stroke={12} pct={pct} color={over ? theme.red : pct > 80 ? theme.accent : theme.green} track={theme.c2}>
-          <span style={{ fontFamily: serif, fontSize: 32, color: theme.txt, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{dispCals.toLocaleString()}</span>
-          <span style={{ ...s.label, fontSize: 9, marginTop: 5 }}>kcal eaten</span>
-        </Ring>
+        <VT name="vt-ring-nut">
+          <Ring size={128} stroke={12} pct={pct} color={over ? theme.red : pct > 80 ? theme.accent : theme.green} track={theme.c2}>
+            <span style={{ fontFamily: serif, fontSize: 32, color: theme.txt, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{dispCals.toLocaleString()}</span>
+            <span style={{ ...s.label, fontSize: 9, marginTop: 5 }}>kcal eaten</span>
+          </Ring>
+        </VT>
         <div style={{ flex: 1, minWidth: 0 }}>
           <CardLabel t={theme} style={{ marginBottom: 10 }}>{isToday ? 'Calories' : fmtDate(viewDate)}</CardLabel>
           <div style={{ fontFamily: serif, fontSize: 38, color: over ? theme.red : theme.green, lineHeight: 1, letterSpacing: '-0.02em' }}>

@@ -10,6 +10,7 @@ import { cacheGet, cacheSet } from '../cache'
 import WeeklyReview from './WeeklyReview'
 import Bloom, { type BloomInput } from '../../Bloom'
 import Onboarding from './Onboarding'
+import { VT } from '../VT'
 
 type Pill = { id: string; name: string; scheduled_time: string }
 type Day = { date: string; value: number }
@@ -309,10 +310,12 @@ export default function HomePage() {
           onClick={() => router.push('/dashboard/nutrition')} {...hover('nutrition')}>
           <TileHead icon="nutrition" name="Eat" accent={nutColor} />
           <div style={{ display: 'flex', justifyContent: 'center', margin: '4px 0 2px' }}>
-            <Ring size={104} stroke={10} pct={calPct} color={nutColor} track={theme.c2}>
-              <span style={{ fontFamily: serif, fontSize: 22, color: calLeft < 0 ? theme.red : theme.txt, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{calLeft < 0 ? `+${Math.abs(calLeft).toLocaleString()}` : calLeft.toLocaleString()}</span>
-              <span style={{ ...label, fontSize: 8.5, marginTop: 4 }}>{calLeft < 0 ? 'over' : 'left'}</span>
-            </Ring>
+            <VT name="vt-ring-nut">
+              <Ring size={104} stroke={10} pct={calPct} color={nutColor} track={theme.c2}>
+                <span style={{ fontFamily: serif, fontSize: 22, color: calLeft < 0 ? theme.red : theme.txt, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{calLeft < 0 ? `+${Math.abs(calLeft).toLocaleString()}` : calLeft.toLocaleString()}</span>
+                <span style={{ ...label, fontSize: 8.5, marginTop: 4 }}>{calLeft < 0 ? 'over' : 'left'}</span>
+              </Ring>
+            </VT>
           </div>
           <div style={{ fontSize: 11.5, color: theme.muted, textAlign: 'center', marginTop: 8 }}>
             {dispCals.toLocaleString()} of {calGoal.toLocaleString()} kcal
@@ -324,10 +327,12 @@ export default function HomePage() {
           onClick={() => router.push('/dashboard/finance')} {...hover('finance')}>
           <TileHead icon="finance" name="Money" accent={finColor} />
           <div style={{ display: 'flex', justifyContent: 'center', margin: '4px 0 2px' }}>
-            <Ring size={104} stroke={10} pct={budgetPct} color={finColor} track={theme.c2}>
-              <span style={{ fontFamily: serif, fontSize: 20, color: moneyLeft < 0 ? theme.red : theme.txt, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>৳{Math.abs(budget - dispSpent).toLocaleString()}</span>
-              <span style={{ ...label, fontSize: 8.5, marginTop: 4 }}>{moneyLeft < 0 ? 'over' : 'left'}</span>
-            </Ring>
+            <VT name="vt-ring-fin">
+              <Ring size={104} stroke={10} pct={budgetPct} color={finColor} track={theme.c2}>
+                <span style={{ fontFamily: serif, fontSize: 20, color: moneyLeft < 0 ? theme.red : theme.txt, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>৳{Math.abs(budget - dispSpent).toLocaleString()}</span>
+                <span style={{ ...label, fontSize: 8.5, marginTop: 4 }}>{moneyLeft < 0 ? 'over' : 'left'}</span>
+              </Ring>
+            </VT>
           </div>
           <div style={{ fontSize: 11.5, color: theme.muted, textAlign: 'center', marginTop: 8 }}>
             ৳{dispSpent.toLocaleString()} spent
@@ -346,10 +351,12 @@ export default function HomePage() {
           ) : (
             <>
               <div style={{ display: 'flex', justifyContent: 'center', margin: '4px 0 2px' }}>
-                <Ring size={104} stroke={10} pct={pillsPct} color={medColor} track={theme.c2}>
-                  <span style={{ fontFamily: serif, fontSize: 24, color: theme.txt, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{dispPillsDone}<span style={{ color: theme.sub, fontSize: 17 }}>/{pillsTotal}</span></span>
-                  <span style={{ ...label, fontSize: 8.5, marginTop: 4 }}>taken</span>
-                </Ring>
+                <VT name="vt-ring-med">
+                  <Ring size={104} stroke={10} pct={pillsPct} color={medColor} track={theme.c2}>
+                    <span style={{ fontFamily: serif, fontSize: 24, color: theme.txt, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{dispPillsDone}<span style={{ color: theme.sub, fontSize: 17 }}>/{pillsTotal}</span></span>
+                    <span style={{ ...label, fontSize: 8.5, marginTop: 4 }}>taken</span>
+                  </Ring>
+                </VT>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, fontSize: 11.5, marginTop: 8, color: medColor }}>
                 {allDone ? <Icon name="check" size={13} stroke={2.2} /> : hasDue ? <Icon name="clock" size={12} stroke={1.9} /> : null}

@@ -7,6 +7,7 @@ import { animate, stagger } from 'animejs'
 import { styles, PageHeader, CardLabel, Loader, EmptyState, WeekChart, Ring, lastNDays, Icon, serif, sans } from '../ui'
 import { cacheGet, cacheSet } from '../cache'
 import { useToast } from '../Toast'
+import { VT } from '../VT'
 
 type Expense = { id: string; name: string; amount: number; category: string; date: string }
 type Day = { date: string; value: number }
@@ -227,10 +228,12 @@ export default function FinancePage() {
       )}
 
       <div ref={summaryRef} className="luma-card" style={{ ...s.card, opacity: 0, display: 'flex', alignItems: 'center', gap: 22 }}>
-        <Ring size={128} stroke={12} pct={pct} color={pct > 90 ? theme.red : pct > 70 ? theme.accent : theme.green} track={theme.c2}>
-          <span style={{ fontFamily: serif, fontSize: 26, color: theme.txt, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{pct}%</span>
-          <span style={{ ...s.label, fontSize: 9, marginTop: 5 }}>spent</span>
-        </Ring>
+        <VT name="vt-ring-fin">
+          <Ring size={128} stroke={12} pct={pct} color={pct > 90 ? theme.red : pct > 70 ? theme.accent : theme.green} track={theme.c2}>
+            <span style={{ fontFamily: serif, fontSize: 26, color: theme.txt, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{pct}%</span>
+            <span style={{ ...s.label, fontSize: 9, marginTop: 5 }}>spent</span>
+          </Ring>
+        </VT>
         <div style={{ flex: 1, minWidth: 0 }}>
           <CardLabel t={theme} style={{ marginBottom: 10 }}>{over ? 'Over Budget' : 'Remaining'}</CardLabel>
           <div style={{ fontFamily: serif, fontSize: 38, color: over ? theme.red : theme.green, lineHeight: 1, letterSpacing: '-0.02em' }}>

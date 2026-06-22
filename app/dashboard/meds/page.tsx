@@ -7,6 +7,7 @@ import { animate, stagger } from 'animejs'
 import { styles, PageHeader, CardLabel, Loader, EmptyState, Ring, Icon, serif, sans } from '../ui'
 import { cacheGet, cacheSet } from '../cache'
 import { useToast } from '../Toast'
+import { VT } from '../VT'
 
 type MedCache = { pills: Pill[]; taken: string[] }
 
@@ -250,10 +251,12 @@ export default function MedsPage() {
       {pills.length > 0 && (
         <div ref={pillsCardRef} className="luma-card" style={{ ...s.card, opacity: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 20, paddingBottom: 20, borderBottom: `1px solid ${theme.border}` }}>
-            <Ring size={106} stroke={11} pct={pills.length ? Math.round(pillsDone / pills.length * 100) : 0} color={allDone ? theme.green : overdueCount > 0 ? theme.red : theme.accent} track={theme.c2}>
-              <span style={{ fontFamily: serif, fontSize: 26, color: theme.txt, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{pillsDone}<span style={{ color: theme.sub, fontSize: 18 }}>/{pills.length}</span></span>
-              <span style={{ ...s.label, fontSize: 9, marginTop: 4 }}>taken</span>
-            </Ring>
+            <VT name="vt-ring-med">
+              <Ring size={106} stroke={11} pct={pills.length ? Math.round(pillsDone / pills.length * 100) : 0} color={allDone ? theme.green : overdueCount > 0 ? theme.red : theme.accent} track={theme.c2}>
+                <span style={{ fontFamily: serif, fontSize: 26, color: theme.txt, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{pillsDone}<span style={{ color: theme.sub, fontSize: 18 }}>/{pills.length}</span></span>
+                <span style={{ ...s.label, fontSize: 9, marginTop: 4 }}>taken</span>
+              </Ring>
+            </VT>
             <div style={{ flex: 1, minWidth: 0 }}>
               <CardLabel t={theme} style={{ marginBottom: 8 }}>{isToday ? 'Today' : fmtDate(viewDate)}</CardLabel>
               <div style={{ fontFamily: serif, fontSize: 30, color: allDone ? theme.green : overdueCount > 0 ? theme.red : theme.txt, lineHeight: 1, letterSpacing: '-0.02em' }}>

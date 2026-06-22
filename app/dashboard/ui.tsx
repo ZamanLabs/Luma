@@ -111,6 +111,16 @@ export const GLOBAL_CSS = `
   .luma-ambient { animation: none !important; }
 }
 
+/* Shared-element view transitions — smooth morph easing + soft blur in flight */
+::view-transition-group(*) { animation-duration: .42s; animation-timing-function: cubic-bezier(0.22,1,0.36,1); }
+::view-transition-image-pair(*) { animation-name: lumaVTBlur; }
+@keyframes lumaVTBlur { 40% { filter: blur(2.5px); } }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(*), ::view-transition-new(*), ::view-transition-group(*) {
+    animation-duration: 0s !important; animation-delay: 0s !important;
+  }
+}
+
 @media (pointer: fine) {
   .luma-cursor-on, .luma-cursor-on * { cursor: none; }
   .luma-cursor-on input, .luma-cursor-on textarea, .luma-cursor-on select, .luma-cursor-on [contenteditable] { cursor: auto; }
