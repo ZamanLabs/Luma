@@ -52,7 +52,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <Ctx.Provider value={api}>
       {children}
-      <div style={{
+      <div role="status" aria-live="polite" style={{
         position: 'fixed', left: 0, right: 0, bottom: 'calc(94px + env(safe-area-inset-bottom, 0px))',
         zIndex: 200, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, pointerEvents: 'none', padding: '0 16px',
       }}>

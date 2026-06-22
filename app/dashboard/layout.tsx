@@ -28,6 +28,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const [menuOpen, setMenuOpen] = useState(false)
   const [profile, setProfile] = useState({ name: '', email: '' })
+  const [cursorOn, setCursorOn] = useState(true)
+
+  useEffect(() => { try { setCursorOn(localStorage.getItem('luma-cursor') !== '0') } catch {} }, [])
+  const toggleCursor = () => setCursorOn(p => { const n = !p; try { localStorage.setItem('luma-cursor', n ? '1' : '0') } catch {}; return n })
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -122,7 +126,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <ProfileMenuContext.Provider value={() => setMenuOpen(true)}>
     <div style={{ ...cssVars, minHeight: '100vh', background: theme.bg, color: theme.txt, fontFamily: sans, position: 'relative' }}>
       <style>{FONT_IMPORT + GLOBAL_CSS}</style>
-      <Cursor accent={theme.accent} />
+      {cursorOn && <Cursor accent={theme.accent} />}
       <Intro />
 
       {/* Signature ambient — a slow aurora that drifts and shifts with the
@@ -293,6 +297,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 )
               })}
             </div>
+
+            <button onClick={toggleCursor} role="switch" aria-checked={cursorOn} style={{
+              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+              background: theme.c2, border: `1px solid ${theme.border}`, borderRadius: 12, padding: '12px 14px',
+              cursor: 'pointer', marginBottom: 12, fontFamily: sans,
+            }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 13.5, color: theme.txt }}>
+                <Icon name="sparkle" size={15} stroke={1.8} />Custom cursor
+              </span>
+              <span style={{
+                width: 38, height: 22, borderRadius: 999, flexShrink: 0, position: 'relative',
+                background: cursorOn ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.c3,
+                border: `1px solid ${cursorOn ? 'transparent' : theme.border}`, transition: 'background .2s',
+              }}>
+                <span style={{
+                  position: 'absolute', top: 2, left: cursorOn ? 18 : 2, width: 16, height: 16, borderRadius: '50%',
+                  background: cursorOn ? theme.bg : theme.muted, transition: 'left .2s ease',
+                }} />
+              </span>
+            </button>
 
             <button onClick={signOut} style={{
               width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,

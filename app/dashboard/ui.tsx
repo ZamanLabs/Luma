@@ -241,7 +241,8 @@ export function styles(t: Theme) {
     fontWeight: 600,
     letterSpacing: '0.16em',
     textTransform: 'uppercase',
-    color: t.sub,
+    // Slightly stronger than `sub` for readability without losing the quiet feel.
+    color: `color-mix(in srgb, ${t.muted} 65%, ${t.sub})`,
   }
 
   return {

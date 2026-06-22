@@ -65,5 +65,5 @@ export default function Ember({ size = 34 }: { size?: number }) {
     return () => { cancelAnimationFrame(raf); document.removeEventListener('visibilitychange', onVis) }
   }, [size])
 
-  return <canvas ref={ref} style={{ width: size, height: size, display: 'block' }} />
+  return <canvas ref={ref} aria-hidden="true" style={{ width: size, height: size, display: 'block' }} />
 }

@@ -289,19 +289,30 @@ export default function HomePage() {
       <div ref={sectionsRef} className="luma-bento" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 13 }}>
 
         {/* HERO — today's data, grown into a living bloom */}
-        <div className="home-section b-wide" style={{
+        <div className="home-section b-wide" role="img" aria-label={`Today: ${insight}`} style={{
           position: 'relative', opacity: 0, borderRadius: 28, overflow: 'hidden',
-          background: 'radial-gradient(125% 100% at 50% 28%, #0c0a07 0%, #050403 72%)',
-          border: '1px solid rgba(255,255,255,0.07)',
+          background: `radial-gradient(125% 100% at 50% 26%, color-mix(in srgb, ${theme.accent} 12%, #0b0a08) 0%, color-mix(in srgb, ${theme.accent} 5%, #050403) 72%)`,
+          border: '1px solid rgba(255,255,255,0.08)',
           boxShadow: '0 30px 72px -34px rgba(0,0,0,0.9), inset 0 1px 0 rgba(255,255,255,0.05)',
         }}>
-          <Bloom input={bloomInput} height={300} />
+          <Bloom input={bloomInput} height={290} />
           <div style={{ position: 'absolute', top: 18, left: 22, right: 22, display: 'flex', justifyContent: 'space-between', alignItems: 'center', pointerEvents: 'none' }}>
             <span style={{ ...label, color: 'rgba(240,230,214,0.62)' }}>Today, in bloom</span>
             <span style={{ fontSize: 11, color: 'rgba(240,230,214,0.4)', fontFamily: sans }}>{tended}</span>
           </div>
-          <div style={{ position: 'absolute', bottom: 20, left: 24, right: 24, textAlign: 'center', pointerEvents: 'none' }}>
-            <span style={{ fontFamily: serif, fontSize: 18, fontStyle: 'italic', color: 'rgba(240,230,214,0.82)', lineHeight: 1.3 }}>{insight}</span>
+          {/* At-a-glance numbers so the hero informs as well as delights */}
+          <div style={{ position: 'absolute', bottom: 16, left: 16, right: 16, display: 'flex', justifyContent: 'space-around', gap: 6, pointerEvents: 'none' }}>
+            {[
+              { v: calLeft < 0 ? `+${Math.abs(calLeft).toLocaleString()}` : calLeft.toLocaleString(), l: calLeft < 0 ? 'kcal over' : 'kcal left' },
+              { v: `৳${Math.abs(budget - totalSpent).toLocaleString()}`, l: moneyLeft < 0 ? 'over' : 'left' },
+              { v: `${totalMins}`, l: 'min' },
+              ...(pillsTotal > 0 ? [{ v: `${pillsDoneCount}/${pillsTotal}`, l: 'doses' }] : []),
+            ].map((m, i) => (
+              <div key={i} style={{ textAlign: 'center', minWidth: 0 }}>
+                <div style={{ fontFamily: serif, fontSize: 19, color: 'rgba(244,236,221,0.95)', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{m.v}</div>
+                <div style={{ fontFamily: sans, fontSize: 8.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(240,230,214,0.45)', marginTop: 4 }}>{m.l}</div>
+              </div>
+            ))}
           </div>
         </div>
 

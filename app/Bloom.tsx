@@ -167,5 +167,5 @@ export default function Bloom({ input, height = 320 }: { input: BloomInput; heig
     }
   }, [height, input.seed])
 
-  return <div ref={wrapRef} style={{ width: '100%', height }}><canvas ref={canvasRef} /></div>
+  return <div ref={wrapRef} style={{ width: '100%', height }}><canvas ref={canvasRef} role="img" aria-label="A living bloom that grows from your day's activity" /></div>
 }
