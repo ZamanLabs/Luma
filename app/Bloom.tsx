@@ -91,11 +91,12 @@ export default function Bloom({ input, height = 320 }: { input: BloomInput; heig
       ctx.clearRect(0, 0, W, H)
       ctx.globalCompositeOperation = 'lighter'
 
-      // Glow field — fills the whole stage so the void reads as a lit room, not black.
-      const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.hypot(W, H) * 0.55)
-      halo.addColorStop(0, `rgba(${amberCol},${(0.10 + v * 0.12) * (0.4 + warm * 0.6)})`)
-      halo.addColorStop(0.35, `rgba(${petalCol},${0.05 + v * 0.05})`)
-      halo.addColorStop(0.75, `rgba(${petalCol},0.02)`)
+      // Glow field — centered and capped to the canvas so it fully fades to
+      // transparent before the edges (no visible rectangle on any background).
+      const hr = Math.min(W, H) * 0.5
+      const halo = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, hr)
+      halo.addColorStop(0, `rgba(${amberCol},${(0.16 + v * 0.14) * (0.4 + warm * 0.6)})`)
+      halo.addColorStop(0.5, `rgba(${petalCol},${0.05 + v * 0.05})`)
       halo.addColorStop(1, 'rgba(0,0,0,0)')
       ctx.fillStyle = halo; ctx.fillRect(0, 0, W, H)
 
