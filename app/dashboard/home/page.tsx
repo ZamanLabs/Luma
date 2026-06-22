@@ -426,7 +426,7 @@ export default function HomePage() {
 
       </div>
 
-      <WeeklyReview t={theme} />
+      <WeeklyReview t={theme} onOpen={() => router.push('/dashboard/insights')} />
     </div>
   )
 }

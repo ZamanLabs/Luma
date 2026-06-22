@@ -17,7 +17,7 @@ const sumWindow = (rows: { date: string; v: number }[] | undefined, dates: Set<s
 const pctChange = (now: number, prev: number) =>
   prev > 0 ? Math.round(((now - prev) / prev) * 100) : now > 0 ? 100 : 0
 
-export default function WeeklyReview({ t }: { t: Theme }) {
+export default function WeeklyReview({ t, onOpen }: { t: Theme; onOpen?: () => void }) {
   const supabase = createClient()
   const [d, setD] = useState<ReviewData | null>(null)
 
@@ -133,6 +133,15 @@ export default function WeeklyReview({ t }: { t: Theme }) {
         <Stat name="Movement" value={d.move.now + ' min'} metric={d.move} goodDir="up" />
         <Stat name="Meds adherence" value={d.adh.now + '%'} metric={d.adh} goodDir="up" />
       </div>
+
+      {onOpen && (
+        <button onClick={onOpen} className="luma-link" style={{
+          marginTop: 16, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0,
+          display: 'inline-flex', alignItems: 'center', gap: 6, color: t.accent, fontFamily: sans, fontSize: 12.5, fontWeight: 600,
+        }}>
+          See trends &amp; patterns <Icon name="arrowRight" size={14} />
+        </button>
+      )}
     </div>
   )
 }
