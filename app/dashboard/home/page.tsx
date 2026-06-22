@@ -8,7 +8,7 @@ import { animate, stagger } from 'animejs'
 import { Icon, Ring, WeekChart, tileStyle, lastNDays, useProfileMenu, serif, sans } from '../ui'
 import { cacheGet, cacheSet } from '../cache'
 import WeeklyReview from './WeeklyReview'
-import Bloom, { type BloomInput } from './Bloom'
+import Bloom, { type BloomInput } from '../../Bloom'
 
 type Pill = { id: string; name: string; scheduled_time: string }
 type Day = { date: string; value: number }

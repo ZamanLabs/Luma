@@ -1,76 +1,32 @@
 'use client'
 
 import { createClient } from '@/utils/supabase/client'
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
+import Bloom, { type BloomInput } from '../Bloom'
 
 const STYLE = `
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400&family=DM+Sans:wght@300;400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap');
 
 @keyframes lumaRise {
-  from { opacity: 0; transform: translateY(16px); filter: blur(6px); }
+  from { opacity: 0; transform: translateY(18px); filter: blur(7px); }
   to   { opacity: 1; transform: translateY(0);    filter: blur(0); }
 }
-@keyframes lumaBreathe {
-  0%, 100% { opacity: 0.45; transform: scale(1);    }
-  50%      { opacity: 0.9;  transform: scale(1.08); }
-}
-.luma-rise { animation: lumaRise 1s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.luma-rise { animation: lumaRise 1.1s cubic-bezier(0.22, 1, 0.36, 1) both; }
 
 @media (prefers-reduced-motion: reduce) {
-  .luma-rise    { animation-duration: 0.01ms !important; animation-delay: 0ms !important; }
-  .luma-breathe { animation: none !important; }
-  .luma-spot    { display: none !important; }
+  .luma-rise { animation-duration: 0.01ms !important; animation-delay: 0ms !important; }
 }
 `
 
+// An idealised, calm bloom — the brand emblem (no user data on the login).
+const EMBLEM: BloomInput = {
+  growth: 0.96, warmth: 1, motion: 0.5, petals: 26, seed: 70741,
+  green: '#72b07c', amber: '#e8a53a', off: '#c95f52', particle: '#9b7fc9',
+}
+
 export default function LoginPage() {
   const supabase = createClient()
-
-  const bigRef = useRef<HTMLDivElement>(null)
-  const coreRef = useRef<HTMLDivElement>(null)
-  const target = useRef({ x: 0, y: 0 })
-  const pos = useRef({ x: 0, y: 0 })
-  const raf = useRef<number | null>(null)
-
-  const [ready, setReady] = useState(false)
   const [btnHovered, setBtnHovered] = useState(false)
-
-  useEffect(() => {
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    if (reduce) return
-
-    const cx = window.innerWidth / 2
-    const cy = window.innerHeight / 2
-    target.current = { x: cx, y: cy }
-    pos.current = { x: cx, y: cy }
-
-    const onMove = (e: MouseEvent) => {
-      target.current.x = e.clientX
-      target.current.y = e.clientY
-    }
-
-    const loop = () => {
-      const dx = target.current.x - pos.current.x
-      const dy = target.current.y - pos.current.y
-      if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) {
-        pos.current.x += dx * 0.12
-        pos.current.y += dy * 0.12
-        const t = `translate3d(${pos.current.x}px, ${pos.current.y}px, 0)`
-        if (bigRef.current) bigRef.current.style.transform = t
-        if (coreRef.current) coreRef.current.style.transform = t
-      }
-      raf.current = requestAnimationFrame(loop)
-    }
-
-    loop()
-    setReady(true)
-
-    window.addEventListener('mousemove', onMove)
-    return () => {
-      window.removeEventListener('mousemove', onMove)
-      if (raf.current) cancelAnimationFrame(raf.current)
-    }
-  }, [])
 
   const signInWithGoogle = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
@@ -85,73 +41,51 @@ export default function LoginPage() {
       <style>{STYLE}</style>
       <div style={{
         minHeight: '100vh',
-        background: '#090806',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        position: 'relative',
-        overflow: 'hidden',
+        background: 'radial-gradient(135% 90% at 50% 32%, #0e0b08 0%, #050403 74%)',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        position: 'relative', overflow: 'hidden', padding: '0 24px',
       }}>
-
-        {/* Cursor-following spotlights */}
-        <div ref={bigRef} className="luma-spot" style={{
-          position: 'absolute', left: 0, top: 0,
-          width: 1400, height: 1100, marginLeft: -700, marginTop: -550,
-          pointerEvents: 'none', willChange: 'transform',
-          opacity: ready ? 1 : 0, transition: 'opacity 1.2s ease',
-          background: 'radial-gradient(ellipse at center, rgba(232,165,58,0.22) 0%, rgba(232,165,58,0.06) 42%, transparent 70%)',
-        }} />
-        <div ref={coreRef} className="luma-spot" style={{
-          position: 'absolute', left: 0, top: 0,
-          width: 480, height: 400, marginLeft: -240, marginTop: -200,
-          pointerEvents: 'none', willChange: 'transform', mixBlendMode: 'screen',
-          opacity: ready ? 1 : 0, transition: 'opacity 1.2s ease',
-          background: 'radial-gradient(ellipse at center, rgba(255,220,130,0.16) 0%, transparent 60%)',
-        }} />
-
-        {/* Breathing center glow */}
-        <div className="luma-breathe" style={{
-          position: 'absolute', inset: 0, pointerEvents: 'none',
-          animation: 'lumaBreathe 7s ease-in-out infinite',
-          background: 'radial-gradient(ellipse 50% 40% at 50% 50%, rgba(232,165,58,0.06) 0%, transparent 70%)',
-        }} />
 
         {/* Dot grid */}
         <div style={{
           position: 'absolute', inset: 0, pointerEvents: 'none',
-          backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.07) 1px, transparent 1px)',
-          backgroundSize: '32px 32px',
-          maskImage: 'radial-gradient(ellipse 70% 70% at 50% 50%, black 20%, transparent 100%)',
-          WebkitMaskImage: 'radial-gradient(ellipse 70% 70% at 50% 50%, black 20%, transparent 100%)',
+          backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px)',
+          backgroundSize: '34px 34px',
+          maskImage: 'radial-gradient(ellipse 70% 70% at 50% 45%, black 10%, transparent 100%)',
+          WebkitMaskImage: 'radial-gradient(ellipse 70% 70% at 50% 45%, black 10%, transparent 100%)',
         }} />
-
         {/* Grain */}
         <div style={{
-          position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.18,
+          position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.16,
           backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.15'/%3E%3C/svg%3E")`,
         }} />
 
         {/* Content */}
-        <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', padding: '0 24px' }}>
+        <div style={{ position: 'relative', zIndex: 1, width: '100%', maxWidth: 560, textAlign: 'center' }}>
+
+          {/* Living emblem — the same bloom that lives on the dashboard */}
+          <div className="luma-rise" style={{ animationDelay: '0.05s', marginBottom: -30 }}>
+            <Bloom input={EMBLEM} height={300} />
+          </div>
 
           <div className="luma-rise" style={{
-            animationDelay: '0.05s',
+            animationDelay: '0.35s',
             fontFamily: "'Cormorant Garamond', serif",
-            fontSize: 88, fontWeight: 300, color: '#f0e6d6',
-            letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 12,
-            textShadow: '0 0 70px rgba(232,165,58,0.3)',
+            fontSize: 76, fontWeight: 400, color: '#f4ecdd',
+            letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 14,
+            textShadow: '0 0 60px rgba(232,165,58,0.28)',
           }}>
             Luma
           </div>
 
           <div className="luma-rise" style={{
-            animationDelay: '0.2s',
+            animationDelay: '0.5s',
             fontFamily: "'DM Sans', sans-serif",
-            fontSize: 11, color: 'rgba(240,230,214,0.34)',
-            letterSpacing: '0.22em', textTransform: 'uppercase',
-            marginBottom: 64, fontWeight: 500,
+            fontSize: 11, color: 'rgba(240,230,214,0.36)',
+            letterSpacing: '0.24em', textTransform: 'uppercase',
+            marginBottom: 56, fontWeight: 500,
           }}>
-            Personal Tracker
+            Tend your days
           </div>
 
           <button
@@ -160,16 +94,16 @@ export default function LoginPage() {
             onMouseEnter={() => setBtnHovered(true)}
             onMouseLeave={() => setBtnHovered(false)}
             style={{
-              animationDelay: '0.35s',
+              animationDelay: '0.65s',
               display: 'flex', alignItems: 'center', gap: 10, margin: '0 auto',
               background: btnHovered ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.05)',
-              border: `1px solid ${btnHovered ? 'rgba(232,165,58,0.45)' : 'rgba(255,255,255,0.1)'}`,
-              borderRadius: 12, padding: '13px 28px', color: '#d4c8b8',
+              border: `1px solid ${btnHovered ? 'rgba(232,165,58,0.5)' : 'rgba(255,255,255,0.1)'}`,
+              borderRadius: 14, padding: '14px 30px', color: '#e8dcc8',
               fontFamily: "'DM Sans', sans-serif", fontSize: 14, fontWeight: 400,
               cursor: 'pointer', backdropFilter: 'blur(8px)', letterSpacing: '0.02em',
-              transform: btnHovered ? 'translateY(-1px)' : 'translateY(0)',
+              transform: btnHovered ? 'translateY(-2px)' : 'translateY(0)',
               transition: 'background .3s ease, border-color .3s ease, box-shadow .3s ease, transform .3s ease',
-              boxShadow: btnHovered ? '0 6px 28px rgba(232,165,58,0.14)' : '0 2px 12px rgba(0,0,0,0.3)',
+              boxShadow: btnHovered ? '0 10px 34px rgba(232,165,58,0.18)' : '0 2px 14px rgba(0,0,0,0.35)',
             }}
           >
             <svg width="18" height="18" viewBox="0 0 24 24">
