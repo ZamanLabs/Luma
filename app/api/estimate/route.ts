@@ -3,30 +3,15 @@ import { NextResponse } from 'next/server'
 
 const SYSTEM = `You estimate calories for food, including messy, composite, and South Asian / Bangladeshi meals. Account for cooking oil and realistic portions, and multiply when a quantity is given.
 
-Return each eaten item with a short name (under 30 characters) and an integer kcal value. "total" must equal the sum of the item kcal values. "note" is one short caveat, or an empty string. Estimate confidently; never refuse.`
+Respond with ONLY a JSON object — no markdown, no prose — of this exact shape:
+{"items":[{"name":"short item name","kcal":<integer>}],"total":<integer>,"note":"one short caveat, or empty string"}
+
+Keep each item name under 30 characters. "total" must equal the sum of the item kcal values. Estimate confidently; never refuse.`
 
 // Gemini's free tier (Google AI Studio key) covers personal use easily.
 // Overridable via env so the model can be swapped without a code change.
 const MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
 const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`
-
-// Force structured JSON output so we never have to scrape prose.
-const RESPONSE_SCHEMA = {
-  type: 'OBJECT',
-  properties: {
-    items: {
-      type: 'ARRAY',
-      items: {
-        type: 'OBJECT',
-        properties: { name: { type: 'STRING' }, kcal: { type: 'INTEGER' } },
-        required: ['name', 'kcal'],
-      },
-    },
-    total: { type: 'INTEGER' },
-    note: { type: 'STRING' },
-  },
-  required: ['items', 'total', 'note'],
-}
 
 type Item = { name: string; kcal: number }
 
@@ -54,7 +39,6 @@ export async function POST(request: Request) {
           temperature: 0.3,
           maxOutputTokens: 800,
           responseMimeType: 'application/json',
-          responseSchema: RESPONSE_SCHEMA,
         },
       }),
     })
@@ -83,7 +67,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: `AI returned nothing (${reason}).` }, { status: 502 })
     }
 
-    const parsed = JSON.parse(raw)
+    const start = raw.indexOf('{'), end = raw.lastIndexOf('}')
+    const parsed = JSON.parse(start >= 0 && end > start ? raw.slice(start, end + 1) : raw)
 
     const items: Item[] = Array.isArray(parsed.items)
       ? parsed.items
