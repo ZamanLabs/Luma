@@ -6,8 +6,8 @@ const SYSTEM = `You estimate calories for food, including messy, composite, and 
 Return each eaten item with a short name (under 30 characters) and an integer kcal value. "total" must equal the sum of the item kcal values. "note" is one short caveat, or an empty string. Estimate confidently; never refuse.`
 
 // Gemini's free tier (Google AI Studio key) covers personal use easily.
-// Pinned to a stable Flash model — bump this string to upgrade.
-const MODEL = 'gemini-2.0-flash'
+// Overridable via env so the model can be swapped without a code change.
+const MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
 const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`
 
 // Force structured JSON output so we never have to scrape prose.
@@ -52,18 +52,37 @@ export async function POST(request: Request) {
         contents: [{ role: 'user', parts: [{ text }] }],
         generationConfig: {
           temperature: 0.3,
-          maxOutputTokens: 600,
+          maxOutputTokens: 800,
           responseMimeType: 'application/json',
           responseSchema: RESPONSE_SCHEMA,
         },
       }),
     })
-    if (!res.ok) throw new Error(`Gemini ${res.status}`)
+
+    // Surface the real upstream failure instead of a generic message.
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '')
+      console.error('[estimate] Gemini HTTP', res.status, detail.slice(0, 500))
+      let msg = `AI service error (${res.status}) on “${MODEL}”.`
+      try {
+        const j = JSON.parse(detail)
+        if (j?.error?.message) msg = `AI error: ${String(j.error.message).slice(0, 160)}`
+      } catch {}
+      return NextResponse.json({ error: msg }, { status: 502 })
+    }
 
     const data = await res.json()
-    const raw: string = (data?.candidates?.[0]?.content?.parts ?? [])
+    const cand = data?.candidates?.[0]
+    const raw: string = (cand?.content?.parts ?? [])
       .map((p: { text?: string }) => p?.text ?? '')
       .join('')
+
+    if (!raw) {
+      const reason = cand?.finishReason || data?.promptFeedback?.blockReason || 'empty response'
+      console.error('[estimate] Gemini empty', JSON.stringify(data).slice(0, 500))
+      return NextResponse.json({ error: `AI returned nothing (${reason}).` }, { status: 502 })
+    }
+
     const parsed = JSON.parse(raw)
 
     const items: Item[] = Array.isArray(parsed.items)
@@ -76,7 +95,8 @@ export async function POST(request: Request) {
     const note = typeof parsed.note === 'string' ? parsed.note.slice(0, 160) : ''
 
     return NextResponse.json({ items, total, note })
-  } catch {
-    return NextResponse.json({ error: 'Couldn’t estimate that — try rephrasing.' }, { status: 502 })
+  } catch (e) {
+    console.error('[estimate] threw', e)
+    return NextResponse.json({ error: 'Couldn’t reach the AI service — try again.' }, { status: 502 })
   }
 }
