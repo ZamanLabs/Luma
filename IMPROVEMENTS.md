@@ -17,7 +17,7 @@ mobile packaging, and a long tail of nice-to-haves.
 - [x] Settings demoted into a profile menu off the avatar
 - [x] Medication reminders (in-app due/overdue/next + opt-in browser notifications while app is open)
 - [x] **Frictionless logging** — quick-add chips, built-in common-foods search, workout presets + timer
-- [x] **AI calorie estimator** — "Ask Claude" box (server-side Haiku) for messy/composite meals
+- [x] **AI calorie estimator** — "Ask AI" box (server-side Gemini Flash, free tier) for messy/composite meals
 - [x] **Trust layer** — toasts, undo-on-delete everywhere, error/retry on all saves, validation, onboarding
 - [x] **Cross-domain insight** — `/dashboard/insights`: 30/90-day trends + plain-English correlations
 - [x] **Journal upgrade** — markdown (write/preview), word count, full-text search

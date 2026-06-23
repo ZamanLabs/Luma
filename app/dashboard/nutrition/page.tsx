@@ -152,8 +152,8 @@ export default function NutritionPage() {
     setName(''); setCalories(''); setFocused(false)
   }
 
-  // Ask Claude (server-side, Haiku) to estimate calories from a free-text meal.
-  const askClaude = async () => {
+  // Ask the AI (server-side, Gemini) to estimate calories from a free-text meal.
+  const askAI = async () => {
     const q = aiText.trim()
     if (!q || aiBusy) return
     setAiBusy(true); setAiRes(null)
@@ -307,16 +307,16 @@ export default function NutritionPage() {
         <div ref={formRef} className="luma-card" style={{ ...s.card, opacity: 0 }}>
           <CardLabel t={theme}>Log Meal</CardLabel>
 
-          {/* Ask Claude — estimate calories for messy / composite meals */}
+          {/* Ask AI — estimate calories for messy / composite meals */}
           <div style={{ marginBottom: 16, padding: 14, borderRadius: 14, background: `color-mix(in srgb, ${theme.accent} 7%, ${theme.c2})`, border: `1px solid color-mix(in srgb, ${theme.accent} 22%, ${theme.border})` }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 9 }}>
               <span style={{ color: theme.accent, display: 'flex' }}><Icon name="sparkle" size={15} stroke={1.8} /></span>
-              <span style={{ ...s.label, color: theme.accent }}>Ask Claude</span>
+              <span style={{ ...s.label, color: theme.accent }}>Ask AI</span>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <input className="luma-input" value={aiText} onChange={e => setAiText(e.target.value)} onKeyDown={e => e.key === 'Enter' && askClaude()}
+              <input className="luma-input" value={aiText} onChange={e => setAiText(e.target.value)} onKeyDown={e => e.key === 'Enter' && askAI()}
                 placeholder="e.g. 8 fried eggs and 4 Maggi noodles" style={{ ...inp, flex: 1 }} />
-              <button className="luma-btn" onClick={askClaude} disabled={aiBusy}
+              <button className="luma-btn" onClick={askAI} disabled={aiBusy}
                 style={{ ...s.primaryBtn, opacity: aiBusy ? 0.7 : 1, display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
                 {aiBusy ? 'Thinking…' : <><Icon name="sparkle" size={15} stroke={2} />Estimate</>}
               </button>
