@@ -6,6 +6,7 @@ import { useTheme } from '../../ThemeContext'
 import { animate, stagger } from 'animejs'
 import { styles, PageHeader, CardLabel, Loader, EmptyState, Ring, Icon, serif, sans } from '../ui'
 import { cacheGet, cacheSet } from '../cache'
+import { useRevalidate, useNow } from '../hooks'
 import { useToast } from '../Toast'
 import { VT } from '../VT'
 
@@ -60,12 +61,12 @@ export default function MedsPage() {
     }, 50)
   }, [])
 
-  const loadData = useCallback(async (date: string, uid: string) => {
+  const loadData = useCallback(async (date: string, uid: string, silent = false) => {
     const key = `meds:${uid}:${date}`
     const cached = cacheGet<MedCache>(key)
     if (cached) {
       setPills(cached.pills); setTaken(cached.taken); setLoading(false)
-      runAnimations(cached.pills, cached.taken)
+      if (!silent) runAnimations(cached.pills, cached.taken)
     } else {
       setLoading(true)
     }
@@ -97,6 +98,8 @@ export default function MedsPage() {
     }
     init()
   }, [supabase, viewDate, loadData])
+  useRevalidate(() => { if (userId) loadData(viewDate, userId, true) })
+  useNow(30000) // re-render twice a minute so Due/Overdue status stays current without a reload
 
   const addPill = async () => {
     if (!pillName.trim() || !pillTime || !userId) return

@@ -23,6 +23,7 @@ mobile packaging, and a long tail of nice-to-haves.
 - [x] **Artistic leaps** — shared-element transitions, living world (parallax aurora + persistent ember), cinematic first-open
 - [x] **Polish** — bloom hero + at-a-glance numbers, custom cursor opt-in, theme-tinted hero stage, RAF loops pause when hidden
 - [x] Fixed double-login (proxy gating the OAuth callback) and the bloom glow rectangle
+- [x] **Live refresh** — data revalidates on app refocus/return (no manual reload) + a clock tick keeps med Due/Overdue current (`app/dashboard/hooks.ts`)
 - [x] Partial a11y — bloom `aria-label`, ember `aria-hidden`, toast `aria-live`, micro-label contrast bump
 
 ---

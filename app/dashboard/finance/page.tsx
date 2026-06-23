@@ -6,6 +6,7 @@ import { useTheme } from '../../ThemeContext'
 import { animate, stagger } from 'animejs'
 import { styles, PageHeader, CardLabel, Loader, EmptyState, WeekChart, Ring, lastNDays, Icon, serif, sans } from '../ui'
 import { cacheGet, cacheSet } from '../cache'
+import { useRevalidate } from '../hooks'
 import { useToast } from '../Toast'
 import { VT } from '../VT'
 
@@ -80,12 +81,12 @@ export default function FinancePage() {
     }, 50)
   }, [])
 
-  const loadData = useCallback(async (m: string, uid: string) => {
+  const loadData = useCallback(async (m: string, uid: string, silent = false) => {
     const key = `finance:${uid}:${m}`
     const cached = cacheGet<Cache>(key)
     if (cached) {
       setBudget(cached.budget); setExpenses(cached.expenses); setWeek(cached.week); setLoading(false)
-      runAnimations(cached.expenses.reduce((s, e) => s + e.amount, 0), cached.budget, cached.expenses)
+      if (!silent) runAnimations(cached.expenses.reduce((s, e) => s + e.amount, 0), cached.budget, cached.expenses)
     } else {
       setLoading(true)
       setDispSpent(0)
@@ -125,6 +126,7 @@ export default function FinancePage() {
     }
     init()
   }, [supabase, viewMonth, loadData])
+  useRevalidate(() => { if (userId) loadData(viewMonth, userId, true) })
 
   const logExpense = async (expName: string, amt: number, cat: string) => {
     if (!expName.trim() || !amt || amt <= 0 || !userId) return

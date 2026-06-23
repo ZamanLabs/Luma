@@ -6,6 +6,7 @@ import { useTheme } from '../../ThemeContext'
 import { animate, stagger } from 'animejs'
 import { styles, PageHeader, CardLabel, Loader, EmptyState, WeekChart, Ring, lastNDays, Icon, serif, sans } from '../ui'
 import { cacheGet, cacheSet } from '../cache'
+import { useRevalidate } from '../hooks'
 import { COMMON_FOODS, type FoodRef } from '../foods'
 import { useToast } from '../Toast'
 import { VT } from '../VT'
@@ -67,12 +68,12 @@ export default function NutritionPage() {
     }, 50)
   }, [])
 
-  const loadData = useCallback(async (date: string, uid: string) => {
+  const loadData = useCallback(async (date: string, uid: string, silent = false) => {
     const key = `nutrition:${uid}:${date}`
     const cached = cacheGet<Cache>(key)
     if (cached) {
       setCalGoal(cached.goal); setFoods(cached.foods); setWeek(cached.week); setFrequent(cached.freq || []); setLoading(false)
-      runAnimations(cached.foods.reduce((s, f) => s + f.calories, 0), cached.goal, cached.foods)
+      if (!silent) runAnimations(cached.foods.reduce((s, f) => s + f.calories, 0), cached.goal, cached.foods)
     } else {
       setLoading(true)
     }
@@ -123,6 +124,7 @@ export default function NutritionPage() {
     }
     init()
   }, [supabase, viewDate, loadData])
+  useRevalidate(() => { if (userId) loadData(viewDate, userId, true) })
 
   const logFood = async (foodName: string, kcal: number) => {
     if (!foodName.trim() || !kcal || kcal <= 0 || !userId || viewDate !== todayStr()) return

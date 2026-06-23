@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { animate, stagger } from 'animejs'
 import { Icon, Ring, WeekChart, tileStyle, lastNDays, useProfileMenu, serif, sans } from '../ui'
 import { cacheGet, cacheSet } from '../cache'
+import { useRevalidate } from '../hooks'
 import WeeklyReview from './WeeklyReview'
 import Bloom, { type BloomInput } from '../../Bloom'
 import Onboarding from './Onboarding'
@@ -75,7 +76,7 @@ export default function HomePage() {
   const sectionsRef = useRef<HTMLDivElement>(null)
   const greetingRef = useRef<HTMLDivElement>(null)
 
-  const loadAll = useCallback(async () => {
+  const loadAll = useCallback(async (silent = false) => {
     const applyState = (d: Snapshot) => {
       setUserName(d.name); setCalGoal(d.cg); setBudget(d.bg)
       setTotalCals(d.cals); setTotalSpent(d.spent); setTotalMins(d.mins)
@@ -117,7 +118,7 @@ export default function HomePage() {
     }
 
     const cached = cacheGet<Snapshot>('home')
-    if (cached) { applyState(cached); setLoading(false); reveal(cached) }
+    if (cached) { applyState(cached); setLoading(false); if (!silent) reveal(cached) }
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
@@ -167,6 +168,7 @@ export default function HomePage() {
   }, [supabase])
 
   useEffect(() => { loadAll() }, [loadAll])
+  useRevalidate(() => loadAll(true))
 
   const calPct = Math.min(100, Math.round(totalCals / calGoal * 100))
   const budgetPct = Math.min(100, Math.round(totalSpent / budget * 100))

@@ -6,6 +6,7 @@ import { useTheme } from '../../ThemeContext'
 import { animate, stagger } from 'animejs'
 import { styles, PageHeader, CardLabel, Loader, EmptyState, WeekChart, lastNDays, Icon, serif, sans } from '../ui'
 import { cacheGet, cacheSet } from '../cache'
+import { useRevalidate } from '../hooks'
 import { useToast } from '../Toast'
 
 type ExerciseLog = { id: string; type: string; duration_minutes: number; notes: string; date: string; time: string }
@@ -79,12 +80,12 @@ export default function ExercisePage() {
     }, 50)
   }, [])
 
-  const loadData = useCallback(async (date: string, uid: string) => {
+  const loadData = useCallback(async (date: string, uid: string, silent = false) => {
     const key = `exercise:${uid}:${date}`
     const cached = cacheGet<Cache>(key)
     if (cached) {
       setActs(cached.acts); setWeek(cached.week); setLoading(false)
-      runAnimations(cached.acts)
+      if (!silent) runAnimations(cached.acts)
     } else {
       setLoading(true)
       setDispMins(0); setDispActs(0)
@@ -121,6 +122,7 @@ export default function ExercisePage() {
     }
     init()
   }, [supabase, viewDate, loadData])
+  useRevalidate(() => { if (userId) loadData(viewDate, userId, true) })
 
   const logActivity = async (t: string, mins: number, n: string) => {
     if (!mins || mins <= 0 || !userId || viewDate !== todayStr()) return
